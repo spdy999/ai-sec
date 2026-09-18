@@ -3,3 +3,24 @@
 
 # Claude Code
 .claude/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tf.plan
+plan.json
+*.auto.tfvars
+!*.tfvars.example
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Never commit credentials
+*.env
+.envrc
+aws-env.sh
