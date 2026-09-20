@@ -1,0 +1,12 @@
+# Breaks: Pod Security admission.
+#
+# A namespace with no pod-security.kubernetes.io/enforce label runs at the
+# "privileged" default. Nothing in it is checked, so every workload control
+# downstream becomes advisory. This is the quietest of the four failures here:
+# the manifest looks unremarkable and the cluster accepts it without comment.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: genai-unlabelled
+  labels:
+    app.kubernetes.io/part-of: koerber-genai-assistant

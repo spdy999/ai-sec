@@ -207,3 +207,162 @@ resource "aws_cloudwatch_log_group" "prompts_forever" {
   name              = "/aws/bedrock/insecure/prompts"
   retention_in_days = 3653
 }
+
+########################################
+# Coverage violations
+#
+# Everything below exists so that `make policy-coverage` can prove the
+# remaining rules fire. Each block names the rule it exists to trigger. They are
+# grouped here rather than woven above so it stays obvious that the fixture is a
+# test input, not an abandoned design.
+########################################
+
+# VIOLATION 18: bedrock guardrail with no content filters at all, and a second
+# one whose prompt-attack filter is set below HIGH. Neither is published as an
+# immutable version, and there is no model invocation logging anywhere in the
+# plan, so the audit-trail and version rules fire on the same input.
+resource "aws_bedrock_guardrail" "unfiltered" {
+  name                      = "genai-insecure-unfiltered"
+  blocked_input_messaging   = "blocked"
+  blocked_outputs_messaging = "blocked"
+}
+
+resource "aws_bedrock_guardrail" "weak_prompt_attack" {
+  name                      = "genai-insecure-weak"
+  blocked_input_messaging   = "blocked"
+  blocked_outputs_messaging = "blocked"
+
+  content_policy_config {
+    filters_config {
+      type            = "PROMPT_ATTACK"
+      input_strength  = "MEDIUM"
+      output_strength = "NONE"
+    }
+  }
+}
+
+# VIOLATION 19: an interface endpoint in a US region with private DNS off, so
+# the SDK resolves the public service name anyway. Note that this is not a
+# bedrock-runtime endpoint, so the "Bedrock has no private path" rule still
+# fires alongside it.
+resource "aws_vpc_endpoint" "s3_us_east" {
+  vpc_id              = aws_vpc.insecure.id
+  service_name        = "com.amazonaws.us-east-1.s3"
+  vpc_endpoint_type   = "Interface"
+  private_dns_enabled = false
+}
+
+# VIOLATION 20: the world can open a connection to the node security group.
+resource "aws_vpc_security_group_ingress_rule" "insecure" {
+  security_group_id = aws_security_group.insecure.id
+  cidr_ipv4         = "0.0.0.0/0"
+  ip_protocol       = "-1"
+}
+
+# VIOLATION 21: a service-wide wildcard, InvokeModel on every foundation model,
+# and a model that never went through review.
+resource "aws_iam_policy" "overbroad_bedrock" {
+  name = "genai-assistant-insecure-bedrock"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = "s3:*"
+        Resource = "arn:aws:s3:::genai-assistant-rag-documents-insecure/*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = "bedrock:InvokeModel"
+        Resource = "arn:aws:bedrock:us-east-1::foundation-model/*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = "bedrock:InvokeModel"
+        Resource = "arn:aws:bedrock:us-east-1::foundation-model/meta.llama3-70b-instruct-v1:0"
+      },
+    ]
+  })
+}
+
+# VIOLATION 22: a long-lived access key, which is the credential this platform
+# exists to avoid.
+resource "aws_iam_user" "ops" {
+  name = "genai-insecure-ops"
+}
+
+resource "aws_iam_access_key" "ops" {
+  user = aws_iam_user.ops.name
+}
+
+# VIOLATION 23: retention below the incident-investigation floor. Data
+# minimisation has a lower bound as well as an upper one: a week of logs cannot
+# answer a question about a breach discovered a month later.
+resource "aws_cloudwatch_log_group" "short_retention" {
+  name              = "/aws/bedrock/insecure/short"
+  retention_in_days = 7
+}
+
+# VIOLATION 24: aws:kms with no key id, which silently falls back to the AWS
+# managed key and gives the security team no grant list to audit.
+resource "aws_s3_bucket" "transcripts" {
+  bucket = "genai-assistant-transcripts-insecure"
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "transcripts" {
+  bucket = aws_s3_bucket.transcripts.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "aws:kms"
+    }
+  }
+}
+
+# VIOLATION 25: the vector store encrypted with an AWS owned key.
+resource "aws_opensearchserverless_security_policy" "vectors_encryption" {
+  name = "genai-vectors-enc-insecure"
+  type = "encryption"
+
+  policy = jsonencode({
+    Rules = [{
+      ResourceType = "collection"
+      Resource     = ["collection/genai-vectors-insecure"]
+    }]
+    AWSOwnedKey = true
+  })
+}
+
+# VIOLATION 26: a CMK that never rotates.
+resource "aws_kms_key" "unrotated" {
+  description         = "insecure fixture key"
+  enable_key_rotation = false
+}
+
+# VIOLATION 27: envelope encryption configured, but not over secrets, which is
+# the only resource type that matters. A cluster can look encrypted and not be.
+resource "aws_eks_cluster" "partial_encryption" {
+  name     = "genai-insecure-partial"
+  role_arn = aws_iam_role.mediation.arn
+  version  = "1.31"
+
+  vpc_config {
+    subnet_ids = [aws_subnet.insecure.id]
+  }
+
+  encryption_config {
+    resources = ["config_map"]
+
+    provider {
+      key_arn = aws_kms_key.unrotated.arn
+    }
+  }
+}
+
+# VIOLATION 28: no metadata_options block at all, which leaves IMDSv1 available
+# by default. Absence and misconfiguration are different failures, so the rule
+# that catches each is proven separately.
+resource "aws_launch_template" "no_metadata_options" {
+  name_prefix = "genai-insecure-nometa-"
+}

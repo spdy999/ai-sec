@@ -17,3 +17,12 @@ kubectl context.
 | `wildcard-rbac.yaml` | Least privilege: a ClusterRole granting `*` on `*` |
 | `public-image.yaml` | Supply chain: mutable tag from a public registry, no resource limits |
 | `default-identity-pod.yaml` | Workload identity: default service account with an automounted API token |
+| `unlabelled-namespace.yaml` | Pod Security admission: no enforce label, so the namespace runs privileged |
+| `unannotated-serviceaccount.yaml` | Workload identity: no IRSA role annotation, so pods inherit the node identity |
+| `open-egress-networkpolicy.yaml` | Egress: a NetworkPolicy that allows 0.0.0.0/0, undoing default-deny |
+
+The first four are applied against a live cluster by `make k8s-demo`, which
+shows the API server and the admission webhooks refusing each one. The last
+three are refused by `make policy-k8s-negative` only: a cluster accepts all
+three without complaint, which is the point — an unlabelled namespace and an
+over-broad NetworkPolicy are valid Kubernetes and invalid here.

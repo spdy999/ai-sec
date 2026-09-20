@@ -1,0 +1,21 @@
+# Breaks: default-deny egress.
+#
+# A NetworkPolicy that allows egress to 0.0.0.0/0 restores exactly the path the
+# architecture removes. Prompt injection that convinces the mediation layer to
+# POST the RAG corpus somewhere needs a route out; this gives it one, while
+# still looking like a security control in a review.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: genai-allow-all-egress
+  namespace: genai-platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: genai-mediation
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0

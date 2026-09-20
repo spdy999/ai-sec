@@ -74,6 +74,11 @@ jobs:
       - name: negative test
         run: make policy-negative
 
+      # And every rule must be one of the rules that fails. A rule that has
+      # never rejected anything is a comment with a syntax highlighter.
+      - name: rule coverage
+        run: make policy-coverage
+
   # ---------------------------------------------------------------------------
   # Workloads: the same policy engine, reading Kubernetes YAML directly.
   # ---------------------------------------------------------------------------

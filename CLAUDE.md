@@ -25,9 +25,10 @@ implementation inside an already-approved shape does not need re-approval.
 make demo             # the presentation walkthrough: pass, then fail, then verdict
 make ci               # the gate chain the pipeline enforces
 make plan             # render both Terraform layers to plan.json, offline
-make policy           # both secure layers must pass all 51 rules
+make policy           # both secure layers must pass all 70 rules
 make policy-negative  # the insecure fixture must FAIL; a clean run is itself a failure
 make policy-k8s       # workload manifests must pass
+make policy-coverage  # every rule must fire against a fixture
 make clean            # remove generated plan artefacts
 ```
 
@@ -49,9 +50,9 @@ Requires `terraform`, `conftest`, and for the live targets `kind` (0.33+),
 controls/terraform/
   eks-platform/       root: where code runs   - VPC, EKS, nodes, endpoints
   bedrock-ai/         root: what code does    - Bedrock, guardrail, corpus, vectors, identity
-  modules/            ten reusable modules, each with its own README
+  modules/            eleven reusable modules, each with its own README
   fixtures/insecure/  deliberately broken config the gate must reject
-controls/policy/      51 Rego rules, applied to Terraform plans AND Kubernetes YAML
+controls/policy/      70 Rego rules, applied to Terraform plans AND Kubernetes YAML
 controls/kubernetes/  base manifests, Kyverno policies, and manifests that must be refused
 .github/workflows/    the CI gate chain, mirroring make ci
 ```
@@ -90,15 +91,33 @@ security group to the endpoint security group is wired in the root module. Both
 are commented where they occur.
 
 **The negative tests are the real tests.** `make policy-negative` and
-`make policy-k8s-negative` invert the exit code. Any new rule should be proven
-to fire against a fixture.
+`make policy-k8s-negative` invert the exit code. Any new rule must be proven to
+fire against a fixture — `make policy-coverage` enforces this and is part of
+`make ci`, so a rule that rejects nothing fails the build.
+
+**Four rules are exempt from coverage**, listed in `controls/policy/coverage.py`
+with a reason each. Every one is the "present but misconfigured" half of a pair
+whose other half is "absent entirely"; a single plan cannot trigger both. The
+exemption is checked in the other direction too: if an exempt rule ever fires,
+the gate fails as stale.
+
+**Plans are file targets, not phony ones.** `make demo` used to render both
+plans twice and print the same four lines twice. `$(PLAN_EKS)` and friends
+rebuild only when their `.tf` sources are newer.
+
+**Screen output goes through `controls/policy/gate.sh`.** conftest reports one
+"test" per rule per document, so nine manifests against seventy rules reads as
+"630 tests" — a number that means nothing on a projector. The wrapper reports
+rules, documents and violations, and truncates negative output to `SHOW`
+examples plus a count (the demo sets `SHOW=5`; CI leaves it unset for a full
+log).
 
 **Governance lists live in `controls/policy/lib.rego`**, not in the module they
 govern — a team cannot approve a new model by editing its own Terraform.
 
 **Bedrock guardrails are configured in Terraform, not reimplemented in code.**
-Custom code exists only for identity-aware authorization and for measuring the
-guardrail's real block rate through `ApplyGuardrail`.
+Custom code exists only for identity-aware authorization. Measuring the
+guardrail's real block rate through `ApplyGuardrail` was cut — see State.
 
 **kubectl's current-context is a real work EKS cluster.** Every kubectl call
 pins `--context kind-koerber-demo`. Never use current-context: the `bad/`
@@ -110,10 +129,18 @@ not start. Never prune the user's podman volumes or stopped containers.
 ## State
 
 Controls 1 and 2 are complete and validated in both directions. Control 3 is
-written but has not run anywhere. Outstanding: the `ApplyGuardrail` test harness
-(injection corpus plus a benign control set, so false positives are reported
-too), the five-page design summary, the top-5 risk assessment, and the README.
+written but has not run anywhere. The README is written, including the section
+on what the local cluster cannot prove (IRSA federating with STS, EKS access
+entries, CMK envelope encryption of etcd, control plane audit logs reaching
+CloudWatch).
 
-What the local cluster cannot prove, and the README must say so: IRSA federating
-with STS, EKS access entries, CMK envelope encryption of etcd, and control plane
-audit logs reaching CloudWatch.
+Outstanding: the five-page design summary and the top-5 risk assessment.
+
+**The `ApplyGuardrail` test harness is cut, deliberately.** Measuring the real
+block rate against an injection corpus is the right thing to build and there is
+no minute for it in a fifteen-minute presentation. It is described in the design
+summary as a design, not shipped as code. Do not restart it without asking.
+
+**The demo is budgeted at three minutes.** `make demo` currently runs in about
+13 seconds and prints 47 lines. Anything added to it has to earn its place
+against that.
