@@ -5,18 +5,24 @@ target renders offline with mock credentials and is read by the policy gate as
 a file.
 
 ```
-ai-platform/          root: Bedrock, guardrail, corpus, vectors, workload identity
-platform/             root: VPC, EKS, nodes, endpoints
+cluster/              root: where code runs   - VPC, EKS, nodes, endpoints
+assistant/            root: what code does    - Bedrock, guardrail, corpus, vectors, identity
 modules/              the reusable pieces both roots compose
 fixtures/insecure/    deliberately broken config the gate must reject
 ```
 
 ## Why two roots
 
-Different owners, different lifecycles, different blast radius. The platform
-team owns the cluster and the network; the AI team owns the model, the
-guardrail and the data. Values flow one way — platform outputs become AI layer
-variables, never the reverse.
+**`cluster/` is where code runs. `assistant/` is what the code does.**
+
+The cluster layer knows nothing about Bedrock, guardrails or documents — it
+would host any workload. The assistant layer knows nothing about subnets or
+kubelets — it consumes a cluster someone else built. Different owners,
+different lifecycles, different blast radius.
+
+Values flow one way: `cluster` outputs become `assistant` variables, never the
+reverse. If the assistant layer is destroyed and rebuilt, the cluster does not
+notice.
 
 There is also a policy reason. Merged into one root, the cluster's OIDC issuer
 URL would be unknown until apply, which makes the whole IRSA trust policy

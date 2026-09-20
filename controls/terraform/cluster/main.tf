@@ -1,9 +1,11 @@
 ########################################
-# Platform layer
+# Cluster layer
 #
-# The container platform the AI mediation service runs on. Owned by the platform
-# team: a separate lifecycle, a separate key, and a separate blast radius from
-# the AI layer in ../ai-platform.
+# Where code runs: the network, the Kubernetes control plane, and the nodes
+# under it. Owned by the platform team, and deployed first.
+#
+# It knows nothing about Bedrock, guardrails or documents. Everything it
+# produces is handed to ../assistant as plain variables, and nothing comes back.
 #
 # Read top to bottom, this file is the left half of the architecture diagram.
 ########################################

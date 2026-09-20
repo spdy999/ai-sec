@@ -1,9 +1,12 @@
 ########################################
-# AI layer
+# Assistant layer
 #
-# Bedrock, the guardrail, the document corpus, the vector store and the single
-# identity permitted to touch them. Owned by the AI platform team, deployed on
-# top of the cluster and VPC that ../platform produces.
+# The AI service itself: the model, the guardrail in front of it, the documents
+# it reads, the vectors it searches, and the single identity permitted to touch
+# any of them.
+#
+# Deployed on top of the cluster that ../cluster produces, whose outputs arrive
+# here as variables.
 #
 # Read top to bottom, this file is the right half of the architecture diagram.
 ########################################
@@ -68,7 +71,7 @@ module "endpoints" {
     "bedrock-runtime" = data.aws_iam_policy_document.bedrock_endpoint.json
   }
 
-  # S3 reaches this VPC through the gateway endpoint the platform layer owns.
+  # S3 reaches this VPC through the gateway endpoint the cluster layer owns.
   gateway_route_table_ids = []
 }
 
