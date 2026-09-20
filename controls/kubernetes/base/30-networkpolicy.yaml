@@ -1,0 +1,91 @@
+# Default deny, in both directions, for every pod in the namespace.
+#
+# This is the control that turns a successful prompt injection into a failed
+# one. An attacker who convinces the assistant to POST the HR corpus to their
+# server gets a connection timeout: the pod has no egress route except the ones
+# named below, and "the attacker's host" is not among them.
+#
+# An empty podSelector means every pod. Applied first, so a pod that is later
+# added to the namespace is denied by default rather than open by default.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: genai-platform
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# DNS is the one egress every workload needs. Restricted to the cluster DNS
+# service on 53 only, so it cannot be used as a tunnel to an arbitrary resolver.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: genai-platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: genai-mediation
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# AWS APIs, reached only through the VPC interface endpoints in the private
+# subnets. The CIDR is the subnet range, not 0.0.0.0/0: the pod can reach
+# Bedrock and S3 through the endpoint ENIs and nothing else on the internet,
+# because nothing else is routable from this VPC in the first place.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-vpc-endpoints
+  namespace: genai-platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: genai-mediation
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.80.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+---
+# Ingress from the in-cluster gateway only. Nothing reaches the mediation layer
+# without passing the authenticating proxy first.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-from-gateway
+  namespace: genai-platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: genai-mediation
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-gateway
+      ports:
+        - protocol: TCP
+          port: 8443

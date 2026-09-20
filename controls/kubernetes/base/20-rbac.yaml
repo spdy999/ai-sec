@@ -1,0 +1,34 @@
+# Kubernetes permissions for the mediation layer: almost none.
+#
+# It reads its own ConfigMap and nothing else. It cannot read Secrets, cannot
+# list pods, cannot exec into anything. If the process is compromised through a
+# prompt injection that reaches code execution, this Role is the ceiling on what
+# the attacker inherits inside the cluster.
+#
+# Note there is no "secrets" verb anywhere. A workload that can read Secrets in
+# its own namespace can read every credential any other workload in that
+# namespace holds.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: genai-mediation
+  namespace: genai-platform
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["genai-mediation-config"]
+    verbs: ["get", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: genai-mediation
+  namespace: genai-platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: genai-mediation
+subjects:
+  - kind: ServiceAccount
+    name: genai-mediation
+    namespace: genai-platform

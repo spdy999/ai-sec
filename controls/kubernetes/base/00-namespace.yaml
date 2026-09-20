@@ -1,0 +1,24 @@
+# Pod Security admission, enforced at the namespace.
+#
+# "restricted" is the strictest built-in profile: no privileged containers, no
+# host namespaces, no root, no added capabilities, seccomp required. It is
+# enforced by the API server itself, so it applies to anything applied to this
+# namespace regardless of which pipeline or person applied it.
+#
+# All three modes are set deliberately. enforce rejects; audit records the
+# rejection in the control plane audit log, which is what the SIEM detection
+# reads; warn returns the reason to whoever ran kubectl, so the failure is
+# self-explanatory instead of mysterious.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: genai-platform
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
+    app.kubernetes.io/part-of: koerber-genai-assistant
+    data-classification: confidential

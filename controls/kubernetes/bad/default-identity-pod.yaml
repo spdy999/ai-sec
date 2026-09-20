@@ -1,0 +1,30 @@
+# REJECTED BY: Kyverno restrict-workload-identity
+#
+# Runs as the default service account, which carries no IRSA annotation and is
+# shared by anything that forgot to name one, and automounts an API token the
+# workload never asked for.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: default-identity-pod
+  namespace: genai-platform
+spec:
+  serviceAccountName: default
+  automountServiceAccountToken: true
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: app
+      image: 000000000000.dkr.ecr.eu-central-1.amazonaws.com/genai-mediation@sha256:0000000000000000000000000000000000000000000000000000000000000000
+      resources:
+        limits:
+          cpu: 100m
+          memory: 128Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
