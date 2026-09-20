@@ -95,12 +95,6 @@ variable "eks_node_security_group_id" {
   default     = "sg-0synthetic0nodes0"
 }
 
-variable "private_route_table_ids" {
-  description = "Route tables of the private subnets, associated with the S3 gateway endpoint."
-  type        = list(string)
-  default     = ["rtb-0synthetic0a", "rtb-0synthetic0b"]
-}
-
 variable "endpoint_az_count" {
   description = "AZs that receive endpoint ENIs. Each ENI bills hourly. Must not exceed the number of private subnets."
   type        = number

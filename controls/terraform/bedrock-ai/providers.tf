@@ -1,10 +1,11 @@
 provider "aws" {
   region = var.region
 
-  # The control is validated offline: `terraform plan` runs with no AWS account
-  # and no credentials, so a reviewer can reproduce it for free. These settings
-  # stop the provider from resolving credentials or calling STS during plan.
-  # A real deployment sets offline_plan = false and authenticates through OIDC.
+  # Offline plan: the graph renders with no AWS account and no credentials, so a
+  # reviewer can reproduce the gate for free. The provider still resolves
+  # credentials during plan even with every skip_* flag set, so mock static keys
+  # are supplied. A real deployment sets offline_plan = false and authenticates
+  # through OIDC.
   skip_credentials_validation = var.offline_plan
   skip_requesting_account_id  = var.offline_plan
   skip_metadata_api_check     = var.offline_plan
