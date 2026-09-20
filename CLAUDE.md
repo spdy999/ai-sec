@@ -76,6 +76,12 @@ resolve until apply into `resource_changes[].change.after_unknown`, not into
 attribute that may be a cross-resource reference — three false positives came
 from missing this.
 
+**`plan.json` is not byte-reproducible.** `terraform show -json` emits
+`relevant_attributes` in a different order on every run, so two plans of
+untouched code compare unequal. To prove a refactor changed nothing, diff
+`jq -S '{planned_values, resource_changes}'` — that is the whole surface the
+policy reads.
+
 **`lib.all_resources` walks every module depth.** It matches objects at a
 `.../resources/<index>` path. A shallower walk would skip everything inside a
 nested module, and a rule that inspects nothing passes.
