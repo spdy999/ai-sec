@@ -43,6 +43,7 @@ resource "aws_eks_node_group" "this" {
   node_group_name = "mediation"
   node_role_arn   = aws_iam_role.nodes.arn
   subnet_ids      = var.subnet_ids
+  capacity_type   = var.capacity_type
 
   scaling_config {
     desired_size = var.desired_size

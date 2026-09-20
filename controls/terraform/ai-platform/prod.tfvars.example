@@ -27,3 +27,8 @@ eks_node_security_group_id = "sg-0000000000000000"
 
 eks_oidc_provider_arn = "arn:aws:iam::123456789012:oidc-provider/oidc.eks.eu-central-1.amazonaws.com/id/EXAMPLE"
 eks_oidc_provider_url = "oidc.eks.eu-central-1.amazonaws.com/id/EXAMPLE"
+
+# Cost. Defaults are already the cheapest working configuration; raise these
+# only for production.
+endpoint_az_count             = 2          # 1 in a demo, 2 for AZ redundancy
+vector_store_standby_replicas = "ENABLED"  # DISABLED halves the OCU count

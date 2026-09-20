@@ -38,6 +38,7 @@ every value the gate inspects a concrete string at plan time.
 | `bedrock-guardrail` | Prompt-attack filter, PII, denied topics | Enforced server-side, so bypassing the app does not bypass it |
 | `bedrock-logging` | Invocation and telemetry log groups | Every prompt and response, encrypted, bounded retention |
 | `workload-identity` | The IRSA role | `StringEquals` on `sub`; model calls denied without the guardrail attached |
+| `cost-guardrails` | Budget and anomaly monitor | Forecast alerts; a stolen identity spending on tokens shows up here first |
 
 Each module has a README explaining what it defends against. Read those before
 the code.
@@ -58,10 +59,33 @@ across them, so two splits that read naturally would deadlock:
 
 Both are visible in the code with comments saying why.
 
+## Cost defaults
+
+The variable defaults are the cheapest configuration that still demonstrates
+every control — roughly $16/day if applied, against $29/day for the same design
+at its provider defaults. Nothing was removed for price; each is a capacity
+choice.
+
+| Variable | Default | Why |
+|---|---|---|
+| `vector_store_standby_replicas` | `DISABLED` | 4 OCU to 2. Saves $11.52/day, the single largest line |
+| `endpoint_az_count` | `1` | Each interface endpoint bills per ENI per hour |
+| `node_desired_size` | `1` | Subnets still span two AZs; this is capacity, not architecture |
+| `node_capacity_type` | `SPOT` | Roughly a third of on-demand |
+| `monthly_budget_usd` | `50` | The ceiling, with forecast alerts below it |
+
+Two of these trade reliability for price. Before a live demonstration, set
+`node_capacity_type = "ON_DEMAND"` and `endpoint_az_count = 2` — about $2.40 a
+day to remove two ways the demo can fail.
+
+`cost_alert_emails` defaults to a placeholder and **must be replaced before
+apply**. The gate rejects a budget with no notification block, but it cannot
+tell a real address from a fake one.
+
 ## Running it
 
 ```bash
 make plan     # render both layers offline
-make policy   # both layers must pass all 47 rules
+make policy   # both layers must pass all 51 rules
 make demo     # the presentation walkthrough
 ```

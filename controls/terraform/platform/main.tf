@@ -65,8 +65,15 @@ module "endpoints" {
   subnet_ids = module.network.private_subnet_ids
 
   client_security_group_id = module.eks.node_security_group_id
-  interface_services       = ["ecr.api", "ecr.dkr", "sts", "logs", "eks"]
-  gateway_route_table_ids  = module.network.private_route_table_ids
+  endpoint_az_count        = var.endpoint_az_count
+
+  # ec2 is not optional: the VPC CNI calls the EC2 API to attach ENIs, and with
+  # no NAT gateway there is no other route to it. The eks endpoint is left out
+  # deliberately -- nothing in this cluster calls the EKS control plane API, and
+  # every endpoint is billed per ENI per hour.
+  interface_services = ["ec2", "ecr.api", "ecr.dkr", "sts", "logs"]
+
+  gateway_route_table_ids = module.network.private_route_table_ids
 }
 
 # Wired here rather than inside either module: the node security group and the
@@ -96,4 +103,17 @@ module "nodes" {
 
   instance_type = var.node_instance_type
   desired_size  = var.node_desired_size
+  capacity_type = var.node_capacity_type
+}
+
+# Free, and the difference between a three dollar demo and a four figure
+# invoice. Also the earliest signal that a stolen workload identity is being
+# used to spend money on model tokens.
+module "cost_guardrails" {
+  source = "../modules/cost-guardrails"
+
+  name_prefix        = var.name_prefix
+  environment        = var.environment
+  monthly_budget_usd = var.monthly_budget_usd
+  alert_emails       = var.cost_alert_emails
 }

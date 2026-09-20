@@ -35,9 +35,20 @@ variable "instance_type" {
 }
 
 variable "desired_size" {
-  description = "Node count."
+  description = "Node count. One node runs the mediation layer and the admission controller comfortably; the subnets still span two AZs so this is a cost choice, not an architectural one."
   type        = number
-  default     = 2
+  default     = 1
+}
+
+variable "capacity_type" {
+  description = "ON_DEMAND or SPOT. Spot is roughly a third of the price and appropriate for a non-production cluster; switch to ON_DEMAND before a live demonstration so an interruption cannot land mid-presentation."
+  type        = string
+  default     = "SPOT"
+
+  validation {
+    condition     = contains(["ON_DEMAND", "SPOT"], var.capacity_type)
+    error_message = "capacity_type must be ON_DEMAND or SPOT."
+  }
 }
 
 variable "volume_size" {

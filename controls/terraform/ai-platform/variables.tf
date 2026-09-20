@@ -100,3 +100,15 @@ variable "private_route_table_ids" {
   type        = list(string)
   default     = ["rtb-0synthetic0a", "rtb-0synthetic0b"]
 }
+
+variable "endpoint_az_count" {
+  description = "AZs that receive endpoint ENIs. Each ENI bills hourly. Must not exceed the number of private subnets."
+  type        = number
+  default     = 1
+}
+
+variable "vector_store_standby_replicas" {
+  description = "OpenSearch Serverless redundancy. ENABLED provisions 4 OCUs and is the most expensive default in this platform; DISABLED halves it."
+  type        = string
+  default     = "DISABLED"
+}

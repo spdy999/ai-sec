@@ -30,6 +30,11 @@ resource "aws_vpc_security_group_egress_rule" "none" {
   to_port     = 255
 }
 
+locals {
+  # One ENI per subnet per endpoint, each billed hourly.
+  endpoint_subnet_ids = slice(var.subnet_ids, 0, min(var.endpoint_az_count, length(var.subnet_ids)))
+}
+
 resource "aws_vpc_endpoint" "interface" {
   for_each = toset(var.interface_services)
 
@@ -37,7 +42,7 @@ resource "aws_vpc_endpoint" "interface" {
   service_name      = "com.amazonaws.${var.region}.${each.value}"
   vpc_endpoint_type = "Interface"
 
-  subnet_ids         = var.subnet_ids
+  subnet_ids         = local.endpoint_subnet_ids
   security_group_ids = [aws_security_group.endpoints.id]
 
   # Without private DNS the SDK keeps resolving the public service name and the

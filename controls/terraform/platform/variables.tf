@@ -71,7 +71,31 @@ variable "node_instance_type" {
 variable "node_desired_size" {
   description = "Desired node count."
   type        = number
-  default     = 2
+  default     = 1
+}
+
+variable "node_capacity_type" {
+  description = "ON_DEMAND or SPOT. Spot costs roughly a third; switch to ON_DEMAND before a live demonstration."
+  type        = string
+  default     = "SPOT"
+}
+
+variable "endpoint_az_count" {
+  description = "AZs that receive interface endpoint ENIs. Each ENI bills hourly, so a second AZ doubles endpoint cost. Two for production, one for a demo."
+  type        = number
+  default     = 1
+}
+
+variable "monthly_budget_usd" {
+  description = "Monthly cost ceiling for the whole platform."
+  type        = number
+  default     = 50
+}
+
+variable "cost_alert_emails" {
+  description = "Addresses notified on forecast budget breach and cost anomalies. The default is a placeholder; replace it before any apply."
+  type        = list(string)
+  default     = ["platform-security@example.com"]
 }
 
 variable "cluster_admin_principal_arns" {

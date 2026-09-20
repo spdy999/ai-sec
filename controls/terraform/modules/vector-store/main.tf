@@ -6,6 +6,10 @@ resource "aws_opensearchserverless_collection" "this" {
   name = local.collection_name
   type = "VECTORSEARCH"
 
+  # Billing is per OCU-hour whether the collection is queried once or never.
+  # The default, ENABLED, provisions four.
+  standby_replicas = var.standby_replicas
+
   # Both security policies must exist before the collection, or it is created
   # with AWS defaults and then corrected, leaving a window where it was public.
   depends_on = [

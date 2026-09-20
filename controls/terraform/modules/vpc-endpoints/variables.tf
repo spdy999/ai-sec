@@ -19,8 +19,19 @@ variable "vpc_id" {
 }
 
 variable "subnet_ids" {
-  description = "Private subnets for the endpoint ENIs."
+  description = "Private subnets available for endpoint ENIs."
   type        = list(string)
+}
+
+variable "endpoint_az_count" {
+  description = "How many of those subnets actually receive an ENI. Each interface endpoint bills per ENI per hour, so a second AZ doubles the cost of every endpoint. Two for production, one for a demo."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.endpoint_az_count >= 1
+    error_message = "At least one subnet must carry the endpoint."
+  }
 }
 
 variable "client_security_group_id" {

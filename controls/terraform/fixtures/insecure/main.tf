@@ -193,3 +193,17 @@ resource "aws_launch_template" "insecure" {
     }
   }
 }
+
+# VIOLATION 16: vector store at full redundancy, four OCUs, billed hourly
+# whether anyone queries it or not.
+resource "aws_opensearchserverless_collection" "insecure" {
+  name             = "genai-vectors-insecure"
+  type             = "VECTORSEARCH"
+  standby_replicas = "ENABLED"
+}
+
+# VIOLATION 17: confidential prompt text kept for ten years.
+resource "aws_cloudwatch_log_group" "prompts_forever" {
+  name              = "/aws/bedrock/insecure/prompts"
+  retention_in_days = 3653
+}

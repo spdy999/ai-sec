@@ -61,6 +61,7 @@ module "endpoints" {
   subnet_ids = var.private_subnet_ids
 
   client_security_group_id = var.eks_node_security_group_id
+  endpoint_az_count        = var.endpoint_az_count
   interface_services       = ["bedrock-runtime"]
 
   endpoint_policies = {
@@ -108,8 +109,10 @@ module "vector_store" {
   kms_key_arn = module.encryption.arn
 
   vpc_id             = var.vpc_id
-  subnet_ids         = var.private_subnet_ids
+  subnet_ids         = slice(var.private_subnet_ids, 0, var.endpoint_az_count)
   security_group_ids = [module.endpoints.security_group_id]
+
+  standby_replicas = var.vector_store_standby_replicas
 }
 
 # The only identity with access to any of the above. No static credentials:
