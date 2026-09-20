@@ -27,7 +27,8 @@ KIND    := KIND_EXPERIMENTAL_PROVIDER=podman kind
 NO_AWS := env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN -u AWS_PROFILE
 
 .PHONY: help init fmt validate plan plan-insecure policy policy-negative \
-        policy-k8s policy-k8s-negative kind-up kind-down k8s-apply k8s-admit k8s-demo \
+        policy-k8s policy-k8s-negative kind-up kind-down k8s-apply k8s-admit \
+        k8s-demo netpol-proof \
         ci demo clean
 
 help:
@@ -39,6 +40,7 @@ help:
 	@echo "make policy-k8s      prove the workload manifests pass every rule"
 	@echo "make kind-up         create the local cluster"
 	@echo "make k8s-demo        make a real cluster refuse the bad manifests"
+	@echo "make netpol-proof    prove default-deny egress actually blocks traffic"
 	@echo "make clean           remove generated plan artefacts"
 
 init:
@@ -135,6 +137,10 @@ k8s-apply:
 # The hardened workload must be admitted. Same webhooks, no pod scheduled.
 k8s-admit:
 	@$(KUBECTL) apply --dry-run=server -f $(K8S_DIR)/base/40-deployment.yaml
+
+# Declared is not enforced. This sends a packet before and after the policy.
+netpol-proof:
+	@CONTEXT=kind-$(KIND_CLUSTER) $(K8S_DIR)/prove-networkpolicy.sh
 
 # The part worth watching. Each apply is expected to be refused, by a different
 # control, for a reason the cluster states itself.
