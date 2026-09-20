@@ -1,29 +1,34 @@
 output "guardrail_id" {
   description = "Guardrail identifier the mediation layer must send on every InvokeModel call."
-  value       = aws_bedrock_guardrail.genai.guardrail_id
+  value       = module.guardrail.guardrail_id
 }
 
 output "guardrail_version" {
-  description = "Pinned guardrail version. The proxy must not use DRAFT."
-  value       = aws_bedrock_guardrail_version.genai.version
+  description = "Pinned guardrail version. The mediation layer must not use DRAFT."
+  value       = module.guardrail.guardrail_version
 }
 
 output "mediation_role_arn" {
   description = "IRSA role ARN annotated on the mediation service account."
-  value       = aws_iam_role.mediation.arn
+  value       = module.workload_identity.role_arn
 }
 
 output "kms_key_arn" {
   description = "CMK protecting prompts, documents, vectors and logs."
-  value       = aws_kms_key.genai.arn
+  value       = module.encryption.arn
 }
 
 output "rag_bucket" {
   description = "Bucket holding the RAG source corpus."
-  value       = aws_s3_bucket.rag_documents.bucket
+  value       = module.rag_documents.bucket
 }
 
 output "vector_collection_endpoint" {
   description = "Private OpenSearch Serverless endpoint for vector search."
-  value       = aws_opensearchserverless_collection.vectors.collection_endpoint
+  value       = module.vector_store.collection_endpoint
+}
+
+output "mediation_log_group_name" {
+  description = "Log group the SIEM forwarder subscribes to."
+  value       = module.logging.mediation_log_group_name
 }

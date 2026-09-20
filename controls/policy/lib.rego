@@ -10,14 +10,24 @@ package lib
 
 import rego.v1
 
-root_resources := object.get(input, ["planned_values", "root_module", "resources"], [])
+# Every resource in the plan, at any module depth.
+#
+# Terraform nests composed modules arbitrarily deep under
+# planned_values.root_module.child_modules. Walking only the first level would
+# silently skip every resource inside a nested module, and a rule that inspects
+# nothing passes. The walk below matches any object sitting at a
+# ".../resources/<index>" path, which is exactly the shape of a planned
+# resource and nothing else.
+all_resources := [resource |
+	walk(object.get(input, ["planned_values", "root_module"], {}), [path, resource])
 
-child_resources := [resource |
-	some module in object.get(input, ["planned_values", "root_module", "child_modules"], [])
-	some resource in object.get(module, "resources", [])
+	count(path) >= 2
+	path[count(path) - 2] == "resources"
+
+	is_object(resource)
+	object.get(resource, "address", "") != ""
+	object.get(resource, "type", "") != ""
 ]
-
-all_resources := array.concat(root_resources, child_resources)
 
 # Every planned resource of a given Terraform type.
 typed(resource_type) := [resource |

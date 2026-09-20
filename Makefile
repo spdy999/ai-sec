@@ -9,7 +9,7 @@
 #   make ci     <- the exact gate chain the pipeline runs
 
 TF          := terraform
-TF_AI       := controls/terraform
+TF_AI       := controls/terraform/ai-platform
 TF_PLATFORM := controls/terraform/platform
 FIXTURE_DIR := controls/terraform/fixtures/insecure
 POLICY_DIR  := controls/policy
@@ -35,7 +35,7 @@ init:
 	@echo "providers installed"
 
 fmt:
-	@$(TF) -chdir=$(TF_AI) fmt -check -recursive
+	@$(TF) -chdir=controls/terraform fmt -check -recursive
 
 validate:
 	@$(TF) -chdir=$(TF_PLATFORM) validate -no-color
@@ -47,8 +47,8 @@ plan: init
 	@$(TF) -chdir=$(TF_PLATFORM) show -json tf.plan > $(TF_PLATFORM)/plan.json
 	@$(NO_AWS) $(TF) -chdir=$(TF_AI) plan -input=false -no-color -out=tf.plan >/dev/null
 	@$(TF) -chdir=$(TF_AI) show -json tf.plan > $(TF_AI)/plan.json
-	@echo "platform layer: $$($(TF) -chdir=$(TF_PLATFORM) show -json tf.plan | jq '.resource_changes | length') resources planned offline"
-	@echo "ai layer:       $$($(TF) -chdir=$(TF_AI) show -json tf.plan | jq '.resource_changes | length') resources planned offline"
+	@echo "platform layer: $$($(TF) -chdir=$(TF_PLATFORM) show -json tf.plan | jq '[.resource_changes[] | select(.mode == "managed")] | length') resources planned offline"
+	@echo "ai layer:       $$($(TF) -chdir=$(TF_AI) show -json tf.plan | jq '[.resource_changes[] | select(.mode == "managed")] | length') resources planned offline"
 	@echo "no AWS account contacted"
 
 plan-insecure: init
