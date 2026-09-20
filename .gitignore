@@ -24,3 +24,5 @@ __pycache__/
 *.env
 .envrc
 aws-env.sh
+
+.obsidian/
