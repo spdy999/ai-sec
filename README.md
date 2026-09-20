@@ -4,9 +4,14 @@ An internal RAG assistant on AWS Bedrock and EKS, implemented as infrastructure
 code with the security controls enforced by a policy gate rather than described
 in a document.
 
-Everything here runs on a laptop at zero cost. No AWS account is contacted:
-`terraform plan` renders the infrastructure graph offline with mock
-credentials, and the policy engine reads that graph as a file.
+The policy gate runs offline and free: `terraform plan` renders the
+infrastructure graph with mock credentials, and the policy engine reads that
+graph as a file — no AWS account touched for CI.
+
+The demo itself deploys for real. `terraform apply` runs against a real AWS
+account in `eu-central-1`, at the tuned cost defaults in
+`controls/terraform/README.md` (roughly $16/day, mostly OpenSearch
+Serverless).
 
 ```bash
 make demo   # the walkthrough: plan, pass, fail, coverage   (~15s)
@@ -77,8 +82,10 @@ the evasive one.
 ## Requirements
 
 `terraform`, `conftest`, `jq`, `python3`. The live cluster targets additionally
-need `kind` (0.33+), `kubectl`, `helm` and a running podman machine. Nothing
-needs an AWS account.
+need `kind` (0.33+), `kubectl`, `helm` and a running podman machine.
+`make plan`, `make policy` and `make ci` need no AWS account — mock
+credentials only. A real `terraform apply` needs a real AWS account with
+Bedrock model access enabled in-region, and incurs the cost above.
 
 ## Note
 

@@ -1,8 +1,9 @@
 # Infrastructure as code
 
-Two root modules and ten reusable modules. Nothing here is deployed; every
-target renders offline with mock credentials and is read by the policy gate as
-a file.
+Two root modules and ten reusable modules. Every target still renders offline
+with mock credentials for the policy gate, but this is deployed for real for
+the demo — a `terraform apply` against a real AWS account in `eu-central-1`,
+at the cost defaults below (roughly $16/day).
 
 ```
 eks-platform/         root: where code runs   - VPC, EKS, nodes, endpoints
