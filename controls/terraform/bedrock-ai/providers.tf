@@ -17,6 +17,7 @@ provider "aws" {
   default_tags {
     tags = {
       Project            = "koerber-genai-assistant"
+      Layer              = "ai"
       Environment        = var.environment
       DataClassification = "confidential"
       DataResidency      = "eu"
