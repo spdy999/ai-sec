@@ -9,7 +9,8 @@
 #   make ci     <- the exact gate chain the pipeline runs
 
 TF          := terraform
-TF_DIR      := controls/terraform
+TF_AI       := controls/terraform
+TF_PLATFORM := controls/terraform/platform
 FIXTURE_DIR := controls/terraform/fixtures/insecure
 POLICY_DIR  := controls/policy
 
@@ -17,40 +18,49 @@ POLICY_DIR  := controls/policy
 # enforced rather than assumed.
 NO_AWS := env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN -u AWS_PROFILE
 
-.PHONY: help init fmt validate plan policy policy-negative ci demo clean
+.PHONY: help init fmt validate plan plan-insecure policy policy-negative ci demo clean
 
 help:
 	@echo "make demo            full walkthrough for the presentation"
 	@echo "make ci              the gate chain the pipeline enforces"
-	@echo "make plan            render the infrastructure graph offline"
-	@echo "make policy          prove the secure module passes"
+	@echo "make plan            render both infrastructure layers offline"
+	@echo "make policy          prove both secure layers pass every rule"
 	@echo "make policy-negative prove the gate rejects insecure config"
 	@echo "make clean           remove generated plan artefacts"
 
 init:
-	@$(TF) -chdir=$(TF_DIR) init -input=false -no-color >/dev/null
+	@$(TF) -chdir=$(TF_PLATFORM) init -input=false -no-color >/dev/null
+	@$(TF) -chdir=$(TF_AI) init -input=false -no-color >/dev/null
 	@$(TF) -chdir=$(FIXTURE_DIR) init -input=false -no-color >/dev/null
 	@echo "providers installed"
 
 fmt:
-	@$(TF) -chdir=$(TF_DIR) fmt -check -recursive
+	@$(TF) -chdir=$(TF_AI) fmt -check -recursive
 
 validate:
-	@$(TF) -chdir=$(TF_DIR) validate -no-color
+	@$(TF) -chdir=$(TF_PLATFORM) validate -no-color
+	@$(TF) -chdir=$(TF_AI) validate -no-color
 
-# Renders the plan to JSON. This is the artefact every policy runs against.
+# Renders both plans to JSON. These are the artefacts every policy runs against.
 plan: init
-	@$(NO_AWS) $(TF) -chdir=$(TF_DIR) plan -input=false -no-color -out=tf.plan >/dev/null
-	@$(TF) -chdir=$(TF_DIR) show -json tf.plan > $(TF_DIR)/plan.json
-	@echo "plan rendered offline: $$(wc -c < $(TF_DIR)/plan.json | tr -d ' ') bytes, no AWS contacted"
+	@$(NO_AWS) $(TF) -chdir=$(TF_PLATFORM) plan -input=false -no-color -out=tf.plan >/dev/null
+	@$(TF) -chdir=$(TF_PLATFORM) show -json tf.plan > $(TF_PLATFORM)/plan.json
+	@$(NO_AWS) $(TF) -chdir=$(TF_AI) plan -input=false -no-color -out=tf.plan >/dev/null
+	@$(TF) -chdir=$(TF_AI) show -json tf.plan > $(TF_AI)/plan.json
+	@echo "platform layer: $$($(TF) -chdir=$(TF_PLATFORM) show -json tf.plan | jq '.resource_changes | length') resources planned offline"
+	@echo "ai layer:       $$($(TF) -chdir=$(TF_AI) show -json tf.plan | jq '.resource_changes | length') resources planned offline"
+	@echo "no AWS account contacted"
 
 plan-insecure: init
 	@$(NO_AWS) $(TF) -chdir=$(FIXTURE_DIR) plan -input=false -no-color -out=tf.plan >/dev/null
 	@$(TF) -chdir=$(FIXTURE_DIR) show -json tf.plan > $(FIXTURE_DIR)/plan.json
 
-# The secure module must pass every rule.
+# Both secure layers must pass every rule.
 policy: plan
-	@conftest test --policy $(POLICY_DIR) --all-namespaces $(TF_DIR)/plan.json
+	@echo "-- platform layer (VPC, EKS, nodes) --"
+	@conftest test --policy $(POLICY_DIR) --all-namespaces $(TF_PLATFORM)/plan.json
+	@echo "-- ai layer (Bedrock, guardrail, RAG store, workload identity) --"
+	@conftest test --policy $(POLICY_DIR) --all-namespaces $(TF_AI)/plan.json
 
 # The insecure fixture must FAIL. A policy that has only ever passed has not
 # been tested, so a clean run here is itself a failure.
@@ -75,7 +85,7 @@ demo:
 	@$(MAKE) --no-print-directory plan
 	@echo ""
 	@echo "=================================================================="
-	@echo " 2. The real module must satisfy every security rule."
+	@echo " 2. Both layers must satisfy every security rule."
 	@echo "=================================================================="
 	@$(MAKE) --no-print-directory policy
 	@echo ""
@@ -85,6 +95,7 @@ demo:
 	@$(MAKE) --no-print-directory policy-negative
 
 clean:
-	@rm -f $(TF_DIR)/tf.plan $(TF_DIR)/plan.json
+	@rm -f $(TF_AI)/tf.plan $(TF_AI)/plan.json
+	@rm -f $(TF_PLATFORM)/tf.plan $(TF_PLATFORM)/plan.json
 	@rm -f $(FIXTURE_DIR)/tf.plan $(FIXTURE_DIR)/plan.json
 	@echo "generated artefacts removed"

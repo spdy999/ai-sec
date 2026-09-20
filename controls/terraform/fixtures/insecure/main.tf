@@ -97,3 +97,99 @@ resource "aws_opensearchserverless_security_policy" "vectors_network" {
     AllowFromPublic = true
   }])
 }
+
+########################################
+# Platform layer violations
+# These exist so every rule in ../../../policy/eks.rego can be proven to fire.
+########################################
+
+# VIOLATION 8: VPC with no flow logs, so refused connections leave no evidence.
+resource "aws_vpc" "insecure" {
+  cidr_block = "10.90.0.0/16"
+}
+
+# VIOLATION 9: workload subnet that hands out public IPs.
+resource "aws_subnet" "insecure" {
+  vpc_id                  = aws_vpc.insecure.id
+  cidr_block              = "10.90.0.0/20"
+  map_public_ip_on_launch = true
+}
+
+# VIOLATION 10: internet gateway restores the exfiltration path.
+resource "aws_internet_gateway" "insecure" {
+  vpc_id = aws_vpc.insecure.id
+}
+
+# VIOLATION 11: NAT gateway, same problem with an extra bill.
+resource "aws_eip" "insecure" {
+  domain = "vpc"
+}
+
+resource "aws_nat_gateway" "insecure" {
+  allocation_id = aws_eip.insecure.id
+  subnet_id     = aws_subnet.insecure.id
+}
+
+# VIOLATION 12: default route out of the VPC.
+resource "aws_route_table" "insecure" {
+  vpc_id = aws_vpc.insecure.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.insecure.id
+  }
+}
+
+# VIOLATION 13: unrestricted egress, the pod can reach any host on the internet.
+resource "aws_security_group" "insecure" {
+  name   = "genai-insecure-nodes"
+  vpc_id = aws_vpc.insecure.id
+}
+
+resource "aws_vpc_security_group_egress_rule" "insecure" {
+  security_group_id = aws_security_group.insecure.id
+  cidr_ipv4         = "0.0.0.0/0"
+  ip_protocol       = "-1"
+}
+
+# VIOLATION 14: public API server, no secrets encryption, partial audit logging,
+# aws-auth ConfigMap access, and cluster admin granted to whoever ran apply.
+resource "aws_eks_cluster" "insecure" {
+  name     = "genai-insecure"
+  role_arn = aws_iam_role.mediation.arn
+  version  = "1.31"
+
+  enabled_cluster_log_types = ["api"]
+
+  vpc_config {
+    subnet_ids              = [aws_subnet.insecure.id]
+    endpoint_public_access  = true
+    endpoint_private_access = false
+  }
+
+  access_config {
+    authentication_mode                         = "API_AND_CONFIG_MAP"
+    bootstrap_cluster_creator_admin_permissions = true
+  }
+}
+
+# VIOLATION 15: IMDSv1 available, hop limit lets the request cross into a
+# container, and the root volume is unencrypted.
+resource "aws_launch_template" "insecure" {
+  name_prefix = "genai-insecure-"
+
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "optional"
+    http_put_response_hop_limit = 2
+  }
+
+  block_device_mappings {
+    device_name = "/dev/xvda"
+
+    ebs {
+      volume_size = 20
+      encrypted   = false
+    }
+  }
+}

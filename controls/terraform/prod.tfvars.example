@@ -1,0 +1,29 @@
+# Wiring the AI layer to a real platform layer.
+#
+# The two root modules are deliberately separate: the platform team owns the
+# VPC and cluster, the AI team owns Bedrock, the guardrail and the RAG store.
+# Values flow one way, as outputs of controls/terraform/platform consumed here
+# as variables.
+#
+#   terraform -chdir=controls/terraform/platform output -json
+#
+# They are passed as variables rather than read through a remote state data
+# source so that `terraform plan` stays offline and the policy gate sees
+# concrete string values instead of unknowns.
+#
+# Copy to prod.tfvars and fill in real values before any apply. Never commit
+# the filled-in copy.
+
+offline_plan = false
+
+account_id = "123456789012"
+region     = "eu-central-1"
+
+vpc_id                  = "vpc-0000000000000000"
+private_subnet_ids      = ["subnet-0000000000000000", "subnet-1111111111111111"]
+private_route_table_ids = ["rtb-0000000000000000", "rtb-1111111111111111"]
+
+eks_node_security_group_id = "sg-0000000000000000"
+
+eks_oidc_provider_arn = "arn:aws:iam::123456789012:oidc-provider/oidc.eks.eu-central-1.amazonaws.com/id/EXAMPLE"
+eks_oidc_provider_url = "oidc.eks.eu-central-1.amazonaws.com/id/EXAMPLE"
