@@ -42,7 +42,8 @@ make kind-down
 ```
 
 Requires `terraform`, `conftest`, and for the live targets `kind` (0.33+),
-`kubectl`, `helm` and podman. Nothing needs an AWS account.
+`kubectl`, `helm` and podman. None of the targets above touch an AWS account
+— a real `terraform apply` is a separate, manual step (see below).
 
 ## Architecture
 
@@ -61,6 +62,12 @@ Every control is validated by proving it rejects bad input, never only that it
 accepts good input.
 
 ## Things that will bite you
+
+**This deploys for real, not just offline.** The user decided against staying
+$0/offline-only. `terraform apply` runs against a real AWS account in
+`eu-central-1`, tuned to roughly $16/day (71% of it OpenSearch Serverless).
+The Makefile has no `apply`/`destroy` target yet — don't add live-deploy
+targets without asking. Always `terraform destroy` after a live session.
 
 **Offline plan needs mock credentials.** The AWS provider resolves credentials
 during `plan` even with every `skip_*` flag set. `providers.tf` passes
