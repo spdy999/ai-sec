@@ -27,7 +27,7 @@ KIND    := KIND_EXPERIMENTAL_PROVIDER=podman kind
 NO_AWS := env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN -u AWS_PROFILE
 
 .PHONY: help init fmt validate plan plan-insecure policy policy-negative \
-        policy-k8s policy-k8s-negative kind-up kind-down k8s-apply k8s-demo \
+        policy-k8s policy-k8s-negative kind-up kind-down k8s-apply k8s-admit k8s-demo \
         ci demo clean
 
 help:
@@ -118,14 +118,32 @@ kind-up:
 kind-down:
 	@$(KIND) delete cluster --name $(KIND_CLUSTER)
 
+# The namespace, identity, RBAC and network policy are applied for real. The
+# Deployment is server-side dry-run only: it references an image digest that
+# does not exist, so a real apply would leave two pods in ImagePullBackOff.
+# A dry run still executes Pod Security and every Kyverno webhook, which is the
+# control being tested here; scheduling a pod is not.
 k8s-apply:
-	@$(KUBECTL) apply -f $(K8S_DIR)/base/ >/dev/null
+	@$(KUBECTL) apply \
+		-f $(K8S_DIR)/base/00-namespace.yaml \
+		-f $(K8S_DIR)/base/10-serviceaccount.yaml \
+		-f $(K8S_DIR)/base/20-rbac.yaml \
+		-f $(K8S_DIR)/base/30-networkpolicy.yaml >/dev/null
 	@$(KUBECTL) apply -f $(K8S_DIR)/policies/ >/dev/null 2>&1 || echo "kyverno not installed; skipping admission policies"
 	@echo "namespace, identity, rbac, network policy and admission policies applied"
+
+# The hardened workload must be admitted. Same webhooks, no pod scheduled.
+k8s-admit:
+	@$(KUBECTL) apply --dry-run=server -f $(K8S_DIR)/base/40-deployment.yaml
 
 # The part worth watching. Each apply is expected to be refused, by a different
 # control, for a reason the cluster states itself.
 k8s-demo: k8s-apply
+	@echo ""
+	@echo "=================================================================="
+	@echo " the hardened workload is admitted"
+	@echo "=================================================================="
+	@$(MAKE) --no-print-directory k8s-admit
 	@for manifest in privileged-pod wildcard-rbac public-image default-identity-pod; do \
 		echo ""; \
 		echo "=================================================================="; \
