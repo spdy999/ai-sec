@@ -5,23 +5,23 @@ target renders offline with mock credentials and is read by the policy gate as
 a file.
 
 ```
-cluster/              root: where code runs   - VPC, EKS, nodes, endpoints
-assistant/            root: what code does    - Bedrock, guardrail, corpus, vectors, identity
+eks-platform/         root: where code runs   - VPC, EKS, nodes, endpoints
+bedrock-ai/           root: what code does    - Bedrock, guardrail, corpus, vectors, identity
 modules/              the reusable pieces both roots compose
 fixtures/insecure/    deliberately broken config the gate must reject
 ```
 
 ## Why two roots
 
-**`cluster/` is where code runs. `assistant/` is what the code does.**
+**`eks-platform/` is where code runs. `bedrock-ai/` is what the code does.**
 
-The cluster layer knows nothing about Bedrock, guardrails or documents — it
-would host any workload. The assistant layer knows nothing about subnets or
-kubelets — it consumes a cluster someone else built. Different owners,
-different lifecycles, different blast radius.
+`eks-platform` knows nothing about Bedrock, guardrails or documents — it would
+host any workload. `bedrock-ai` knows nothing about subnets or kubelets — it
+consumes a cluster someone else built. Different owners, different lifecycles,
+different blast radius.
 
-Values flow one way: `cluster` outputs become `assistant` variables, never the
-reverse. If the assistant layer is destroyed and rebuilt, the cluster does not
+Values flow one way: `eks-platform` outputs become `bedrock-ai` variables, never
+the reverse. If the AI layer is destroyed and rebuilt, the cluster does not
 notice.
 
 There is also a policy reason. Merged into one root, the cluster's OIDC issuer

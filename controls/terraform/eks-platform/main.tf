@@ -1,11 +1,12 @@
 ########################################
-# Cluster layer
+# EKS platform layer
 #
 # Where code runs: the network, the Kubernetes control plane, and the nodes
 # under it. Owned by the platform team, and deployed first.
 #
 # It knows nothing about Bedrock, guardrails or documents. Everything it
-# produces is handed to ../assistant as plain variables, and nothing comes back.
+# produces is handed to ../bedrock-ai as plain variables, and nothing comes
+# back.
 #
 # Read top to bottom, this file is the left half of the architecture diagram.
 ########################################

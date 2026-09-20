@@ -1,5 +1,5 @@
-# The interface to the assistant layer in ../assistant. Passed as variables rather
-# than read through a remote state data source, so the assistant layer plans offline
+# The interface to the AI layer in ../bedrock-ai. Passed as variables rather
+# than read through a remote state data source, so that layer plans offline
 # and the policy gate sees concrete strings instead of unknowns.
 
 output "vpc_id" {

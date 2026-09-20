@@ -9,8 +9,8 @@
 #   make ci     <- the exact gate chain the pipeline runs
 
 TF          := terraform
-TF_ASSISTANT := controls/terraform/assistant
-TF_CLUSTER   := controls/terraform/cluster
+TF_BEDROCK   := controls/terraform/bedrock-ai
+TF_EKS       := controls/terraform/eks-platform
 FIXTURE_DIR := controls/terraform/fixtures/insecure
 POLICY_DIR  := controls/policy
 
@@ -29,8 +29,8 @@ help:
 	@echo "make clean           remove generated plan artefacts"
 
 init:
-	@$(TF) -chdir=$(TF_CLUSTER) init -input=false -no-color >/dev/null
-	@$(TF) -chdir=$(TF_ASSISTANT) init -input=false -no-color >/dev/null
+	@$(TF) -chdir=$(TF_EKS) init -input=false -no-color >/dev/null
+	@$(TF) -chdir=$(TF_BEDROCK) init -input=false -no-color >/dev/null
 	@$(TF) -chdir=$(FIXTURE_DIR) init -input=false -no-color >/dev/null
 	@echo "providers installed"
 
@@ -38,17 +38,17 @@ fmt:
 	@$(TF) -chdir=controls/terraform fmt -check -recursive
 
 validate:
-	@$(TF) -chdir=$(TF_CLUSTER) validate -no-color
-	@$(TF) -chdir=$(TF_ASSISTANT) validate -no-color
+	@$(TF) -chdir=$(TF_EKS) validate -no-color
+	@$(TF) -chdir=$(TF_BEDROCK) validate -no-color
 
 # Renders both plans to JSON. These are the artefacts every policy runs against.
 plan: init
-	@$(NO_AWS) $(TF) -chdir=$(TF_CLUSTER) plan -input=false -no-color -out=tf.plan >/dev/null
-	@$(TF) -chdir=$(TF_CLUSTER) show -json tf.plan > $(TF_CLUSTER)/plan.json
-	@$(NO_AWS) $(TF) -chdir=$(TF_ASSISTANT) plan -input=false -no-color -out=tf.plan >/dev/null
-	@$(TF) -chdir=$(TF_ASSISTANT) show -json tf.plan > $(TF_ASSISTANT)/plan.json
-	@echo "cluster layer:   $$($(TF) -chdir=$(TF_CLUSTER) show -json tf.plan | jq '[.resource_changes[] | select(.mode == "managed")] | length') resources planned offline"
-	@echo "assistant layer: $$($(TF) -chdir=$(TF_ASSISTANT) show -json tf.plan | jq '[.resource_changes[] | select(.mode == "managed")] | length') resources planned offline"
+	@$(NO_AWS) $(TF) -chdir=$(TF_EKS) plan -input=false -no-color -out=tf.plan >/dev/null
+	@$(TF) -chdir=$(TF_EKS) show -json tf.plan > $(TF_EKS)/plan.json
+	@$(NO_AWS) $(TF) -chdir=$(TF_BEDROCK) plan -input=false -no-color -out=tf.plan >/dev/null
+	@$(TF) -chdir=$(TF_BEDROCK) show -json tf.plan > $(TF_BEDROCK)/plan.json
+	@echo "eks-platform layer: $$($(TF) -chdir=$(TF_EKS) show -json tf.plan | jq '[.resource_changes[] | select(.mode == "managed")] | length') resources planned offline"
+	@echo "bedrock-ai layer:   $$($(TF) -chdir=$(TF_BEDROCK) show -json tf.plan | jq '[.resource_changes[] | select(.mode == "managed")] | length') resources planned offline"
 	@echo "no AWS account contacted"
 
 plan-insecure: init
@@ -57,10 +57,10 @@ plan-insecure: init
 
 # Both secure layers must pass every rule.
 policy: plan
-	@echo "-- cluster layer: network, Kubernetes, nodes --"
-	@conftest test --policy $(POLICY_DIR) --all-namespaces $(TF_CLUSTER)/plan.json
-	@echo "-- assistant layer: Bedrock, guardrail, corpus, vectors, identity --"
-	@conftest test --policy $(POLICY_DIR) --all-namespaces $(TF_ASSISTANT)/plan.json
+	@echo "-- eks-platform layer: network, Kubernetes, nodes --"
+	@conftest test --policy $(POLICY_DIR) --all-namespaces $(TF_EKS)/plan.json
+	@echo "-- bedrock-ai layer: guardrail, corpus, vectors, workload identity --"
+	@conftest test --policy $(POLICY_DIR) --all-namespaces $(TF_BEDROCK)/plan.json
 
 # The insecure fixture must FAIL. A policy that has only ever passed has not
 # been tested, so a clean run here is itself a failure.
@@ -95,7 +95,7 @@ demo:
 	@$(MAKE) --no-print-directory policy-negative
 
 clean:
-	@rm -f $(TF_ASSISTANT)/tf.plan $(TF_ASSISTANT)/plan.json
-	@rm -f $(TF_CLUSTER)/tf.plan $(TF_CLUSTER)/plan.json
+	@rm -f $(TF_BEDROCK)/tf.plan $(TF_BEDROCK)/plan.json
+	@rm -f $(TF_EKS)/tf.plan $(TF_EKS)/plan.json
 	@rm -f $(FIXTURE_DIR)/tf.plan $(FIXTURE_DIR)/plan.json
 	@echo "generated artefacts removed"
