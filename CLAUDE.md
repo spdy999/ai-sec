@@ -183,8 +183,10 @@ not start. Never prune the user's podman volumes or stopped containers.
 
 ## State
 
-Controls 1 and 2 are complete and validated in both directions. Control 3 is
-written but has not run anywhere. The README is written, including the section
+Controls 1 and 2 are complete and validated in both directions. Control 3 ran
+for the first time on 2026-09-21 and is green — it failed twice first, on a
+missing `terraform init` before `validate` and on a trivy-action tag that does
+not exist (upstream tags are `v`-prefixed). The README is written, including the section
 on what the local cluster cannot prove (IRSA federating with STS, EKS access
 entries, CMK envelope encryption of etcd, control plane audit logs reaching
 CloudWatch). `docs/RUNBOOK.md` is written: operational (how to run things);
