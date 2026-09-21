@@ -94,14 +94,14 @@ optionally `COST_ALERT_EMAIL`) as Actions **variables**, and create an Actions
 After that:
 
 ```bash
-gh workflow run deploy.yml            # gate chain, then both layers in order
-gh workflow run destroy.yml -f confirm=destroy
+gh workflow run infra-provision.yml            # gate chain, then both layers in order
+gh workflow run infra-destroy.yml -f confirm=destroy
 ```
 
-`deploy.yml` re-runs `make ci` before it authenticates, generates the S3
+`infra-provision.yml` re-runs `make ci` before it authenticates, generates the S3
 backend and the real tfvars at run time (`.github/scripts/tf-config.sh`), and
 reads the platform layer's applied outputs into the AI layer
-(`.github/scripts/tf-wire.sh`) so no value is hand-copied. `destroy.yml`
+(`.github/scripts/tf-wire.sh`) so no value is hand-copied. `infra-destroy.yml`
 refuses to start unless `confirm` is literally `destroy`, and tears the layers
 down in reverse order.
 
@@ -137,7 +137,7 @@ terraform -chdir=controls/terraform/bedrock-ai apply \
   -var eks_oidc_provider_url=<from step 2>
 ```
 
-**Always tear down after a live session** — `destroy.yml`, or
+**Always tear down after a live session** — `infra-destroy.yml`, or
 `terraform destroy` on both roots by hand, bedrock-ai first, then eks-platform.
 Nothing auto-tears-down. `pipeline-iam` is not part of a teardown: the
 state bucket, its CMK and the deploy role survive, because the next deployment
@@ -166,7 +166,7 @@ everything.
 | A rule checking a cross-resource attribute false-positives | attribute is unresolved at plan time, sitting in `resource_changes[].change.after_unknown`, not `planned_values` | use `lib.unknown_at(address, path)` in the rule |
 | A refactor "changed" a plan with no real diff | `terraform show -json` reorders `relevant_attributes` every run | compare `jq -S '{planned_values, resource_changes}'`, not the raw file |
 | New rule passes `make policy` but fails `make ci` | `make policy-coverage` requires every rule to fire against a fixture at least once | add/extend a fixture so the rule's message appears in negative output, or add it to the 4-rule exemption list in `controls/policy/coverage.py` with a reason |
-| `deploy.yml` fails at `configure-aws-credentials` with `Not authorized to perform sts:AssumeRoleWithWebIdentity` | the job's OIDC subject doesn't match the role's trust policy | the job must declare `environment: production` — the trust policy pins `repo:<owner>/<repo>:environment:production`, not the branch |
+| `infra-provision.yml` fails at `configure-aws-credentials` with `Not authorized to perform sts:AssumeRoleWithWebIdentity` | the job's OIDC subject doesn't match the role's trust policy | the job must declare `environment: production` — the trust policy pins `repo:<owner>/<repo>:environment:production`, not the branch |
 | An apply fails with the state lock already held | a previous run was cancelled mid-apply | `terraform force-unlock <id>` against the same backend, after confirming no run is live; the workflows set `cancel-in-progress: false` to stop this happening |
 | `tf-wire.sh` exits with `eks-platform state holds no outputs` | the AI layer was dispatched against an empty or wrong state | apply the platform layer first, and check `TF_STATE_BUCKET` names the state bucket |
 | An exempt rule shows up in coverage output | one of the "present but misconfigured" halves in `coverage.py` actually fired | remove it from the exemption list — the gate treats this as stale and fails |

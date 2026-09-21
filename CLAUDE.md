@@ -77,8 +77,8 @@ controls/terraform/
   pipeline-iam/       root: run by hand - OIDC provider and the role Actions assumes
 controls/policy/      70 Rego rules, applied to Terraform plans AND Kubernetes YAML
 controls/kubernetes/  base manifests, Kyverno policies, and manifests that must be refused
-.github/workflows/    security.yml (gate chain, mirrors make ci), deploy.yml,
-                      destroy.yml (both dispatch-only, OIDC, no stored keys)
+.github/workflows/    security.yml (gate chain, mirrors make ci), infra-provision.yml,
+                      infra-destroy.yml (both dispatch-only, OIDC, no stored keys)
 .github/scripts/      backend + tfvars generation and cross-root wiring for deploy
 docs/RUNBOOK.md       operational how-to: prereqs, offline loop, live cluster,
                       real AWS apply/destroy order, demo, troubleshooting
@@ -94,7 +94,7 @@ accepts good input.
 $0/offline-only. `terraform apply` runs against a real AWS account in
 `eu-central-1`, tuned to roughly $16/day (71% of it OpenSearch Serverless).
 The Makefile still has no `apply`/`destroy` target — don't add live-deploy
-targets without asking. Deployment is `deploy.yml` / `destroy.yml`, both
+targets without asking. Deployment is `infra-provision.yml` / `infra-destroy.yml`, both
 dispatch-only. Always tear down after a live session.
 
 **The S3 backend is generated at deploy time, never committed.** Declaring a
@@ -193,8 +193,8 @@ CloudWatch). `docs/RUNBOOK.md` is written: operational (how to run things);
 README stays the reviewer-facing what/why/proof doc — don't duplicate content
 between them.
 
-**The deployment pipeline exists but has never run.** `deploy.yml` and
-`destroy.yml` are written, dispatch-only and gate-chained; nothing has been
+**The deployment pipeline exists but has never run.** `infra-provision.yml` and
+`infra-destroy.yml` are written, dispatch-only and gate-chained; nothing has been
 applied from them. Before a first deploy: apply `controls/terraform/pipeline-iam`
 by hand, set the `TF_STATE_BUCKET` and `AWS_DEPLOY_ROLE_ARN` Actions variables
 from its outputs, and create an Actions environment named `production` — the

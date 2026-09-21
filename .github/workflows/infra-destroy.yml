@@ -11,10 +11,10 @@
 #      dispatch form. Unlike the apply side, which is protected by a gate chain
 #      that has to pass first, a destroy has nothing to fail. The typed word is
 #      the only thing standing between a misclick and a deleted cluster.
-#   2. It shares a concurrency group with deploy.yml, so it cannot start while
+#   2. It shares a concurrency group with infra-provision.yml, so it cannot start while
 #      an apply is in flight.
 
-name: destroy
+name: infra destroy
 
 on:
   workflow_dispatch:
@@ -103,7 +103,7 @@ jobs:
           TF_EKS: ${{ env.TF_EKS }}
           TF_BEDROCK: ${{ env.TF_BEDROCK }}
 
-      - name: destroy
+      - name: infra destroy
         run: |
           set -euo pipefail
           terraform -chdir="$TF_BEDROCK" init -input=false -no-color
@@ -144,7 +144,7 @@ jobs:
           TF_STATE_REGION: ${{ vars.TF_STATE_REGION }}
           COST_ALERT_EMAIL: ${{ vars.COST_ALERT_EMAIL }}
 
-      - name: destroy
+      - name: infra destroy
         run: |
           set -euo pipefail
           terraform -chdir="$TF_EKS" init -input=false -no-color

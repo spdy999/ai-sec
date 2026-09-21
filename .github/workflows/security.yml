@@ -6,7 +6,7 @@
 # untrusted input with nothing to steal.
 #
 # No job in this workflow authenticates to AWS at all. Deployment lives in
-# deploy.yml, which is dispatch-only and federates by OIDC against a role
+# infra-provision.yml, which is dispatch-only and federates by OIDC against a role
 # restricted to this repository and environment. There is no long-lived access
 # key in GitHub secrets, because there is no access key at all.
 #

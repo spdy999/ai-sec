@@ -11,15 +11,15 @@
 #      platform layer's real outputs rather than a hand-copied tfvars file.
 #
 # Cost: roughly $16/day while it is up, about 71% of that OpenSearch
-# Serverless. Run destroy.yml when the session ends.
+# Serverless. Run infra-destroy.yml when the session ends.
 
-name: deploy
+name: infra provision
 
 on:
   workflow_dispatch:
 
 # Never cancel a running apply. A cancelled Terraform leaves a held state lock
-# and half-created infrastructure, which is worse than a slow queue. destroy.yml
+# and half-created infrastructure, which is worse than a slow queue. infra-destroy.yml
 # names the same group, so an apply and a destroy cannot overlap.
 concurrency:
   group: genai-platform-live

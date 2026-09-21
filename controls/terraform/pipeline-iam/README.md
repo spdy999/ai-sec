@@ -2,7 +2,7 @@
 
 The one root that runs from a laptop, once, before the pipeline exists.
 
-It creates the three things `deploy.yml` and `destroy.yml` need and cannot
+It creates the three things `infra-provision.yml` and `infra-destroy.yml` need and cannot
 create for themselves:
 
 | resource | why the pipeline can't create it |
