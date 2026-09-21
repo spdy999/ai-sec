@@ -99,12 +99,28 @@ The Makefile still has no `apply`/`destroy` target — don't add live-deploy
 targets without asking. Deployment is `infra-provision.yml` / `infra-destroy.yml`, both
 dispatch-only. Always tear down after a live session.
 
+**`aws-vault` sessions cannot call IAM — always pass `--no-session`.** Without
+it the credentials are wrapped in a `GetSessionToken` session that IAM refuses
+with `InvalidClientTokenId`, while `sts:GetCallerIdentity` succeeds with the
+same token, so the credentials look fine. The account is `171414227044`, the
+profile `pun100`.
+
 **The S3 backend is generated at deploy time, never committed.** Declaring a
 `backend "s3"` block in either root makes `terraform plan` refuse to run
 without initialising it, which breaks `make ci` and the whole offline claim.
 `.github/scripts/tf-config.sh` writes `backend.tf` and `ci.auto.tfvars` inside
 the deploy job; both are gitignored. State is in S3 for deployments and
 nowhere for gates.
+
+**`deploy` is reserved for the application.** Infrastructure workflows are
+`infra-*`. Every terraform command lives in `tf-reusable-workflow.yaml`; the
+four callers pass a layer and an action and nothing else. A second copy of
+those steps in a caller is how the layers drift.
+
+**`pipeline-iam` keeps remote state like the other roots** — it runs with a
+person's own credentials, not the role it creates, so there is no circularity,
+only an ordering requirement that the bucket exists first. Its `backend.tf` is
+the one committed backend file; `.gitignore` carries an explicit exception.
 
 **`environment: production` gates nothing on this plan.** Required-reviewer
 protection rules need a paid plan on a private repo. The real gate is that
@@ -195,17 +211,23 @@ CloudWatch). `docs/RUNBOOK.md` is written: operational (how to run things);
 README stays the reviewer-facing what/why/proof doc — don't duplicate content
 between them.
 
-**The deployment pipeline exists but has never run.** `infra-provision.yml` and
-`infra-destroy.yml` are written, dispatch-only and gate-chained; nothing has been
-applied from them. Before a first deploy: apply `controls/terraform/pipeline-iam`
-by hand, set the `TF_STATE_BUCKET` and `AWS_DEPLOY_ROLE_ARN` Actions variables
-from its outputs, and create an Actions environment named `production` — the
-OIDC trust policy pins it. None of that is done yet.
+**The deployment pipeline is wired but has never run.** `pipeline-iam` is
+applied, the OIDC provider and role exist, the state bucket is live in
+eu-central-1 (versioned, CMK, public access blocked, TLS-only), and
+`AWS_DEPLOY_ROLE_ARN`, `TF_STATE_BUCKET`, `COST_ALERT_EMAIL` plus the
+`production` environment are all set. **Nothing has been provisioned.** The
+first dispatch is what proves the federation works and whether Bedrock model
+access is granted in the account.
 
-**The deploy role's infrastructure policy is service-scoped, not
-resource-scoped** (`ec2:*`, `eks:*`, ...), because the ARNs it would name do
-not exist until the first apply. It is already denied from editing its own
-trust policy or the OIDC provider. Tightening it after a first apply belongs in
+**The deploy role is service-scoped where it must be, resource-scoped where it
+can be.** `ec2:*`, `eks:*`, `kms:*` and friends act on resources that do not
+exist until apply. IAM does not: roles and policies are limited to
+`genai-assistant*`, `PassRole` is conditioned on `iam:PassedToService`, and
+`CreateServiceLinkedRole` on `iam:AWSServiceName`. Two denies hold the
+boundary — the role cannot edit its own trust policy or the GitHub OIDC
+provider, and cannot delete the state bucket it stores its own state in (the
+bucket shares the `genai-assistant-` prefix, so the S3 grant would otherwise
+reach it). Tightening the remaining wildcards after a first apply belongs in
 the risk assessment.
 
 Outstanding: the five-page design summary and the top-5 risk assessment.
