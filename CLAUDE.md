@@ -298,7 +298,23 @@ from `eks:DescribeCluster`. It is harmless and left in place, but it is not
 what fixed the bootstrap; the S3 prefix list rule was, proven by watching the
 node's secondary IP count go from 1 to 12 within seconds of the rule existing.
 
-`infra-destroy` ran clean at the end of the session. The account is empty.
+Rebuilding on upstream found five more, all of them shape rather than
+permission: the node IAM role has to be named `genai-assistant*` or the deploy
+role may not create it; `vpc-cni` and `kube-proxy` need `before_compute = true`,
+because declaring addons stops EKS bootstrapping self-managed ones and the node
+otherwise comes up with `cni plugin not initialized`; both roots named their
+endpoint security group `<prefix>-<env>-vpce`, so the second apply failed with
+`InvalidGroup.Duplicate`; Bedrock invocation logging needs `iam:PassRole` to
+`bedrock.amazonaws.com`; and renaming a security group with a fixed `name`
+deadlocks, because replacement is destroy-first and the endpoints still hold it
+— `name_prefix` plus `create_before_destroy` is the pair that fixes it, neither
+alone.
+
+**Resources are live and billing as of the end of this session.** An
+`infra provision` run was still applying. The cluster, nodes and addons all
+reached ACTIVE on upstream; the remaining failures were the endpoint security
+group churn above. Check the run and dispatch `infra-destroy.yml` before leaving
+it — roughly $17/day.
 
 **The deploy role is service-scoped where it must be, resource-scoped where it
 can be.** `ec2:*`, `eks:*`, `kms:*` and friends act on resources that do not
