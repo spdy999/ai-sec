@@ -61,6 +61,7 @@ module "endpoints" {
   name_prefix = var.name_prefix
   environment = var.environment
   region      = var.region
+  component   = "ai"
 
   vpc_id     = var.vpc_id
   subnet_ids = var.private_subnet_ids

@@ -232,6 +232,11 @@ data "aws_iam_policy_document" "deploy_infrastructure" {
         # delivery role. Without this the VPC applies and the flow log that
         # makes it auditable does not.
         "vpc-flow-logs.amazonaws.com",
+
+        # Bedrock is passed a role so it can write invocation logs. Same shape:
+        # the model layer applies and the record of what was asked of it does
+        # not.
+        "bedrock.amazonaws.com",
       ]
     }
   }

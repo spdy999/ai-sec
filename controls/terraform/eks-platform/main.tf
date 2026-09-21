@@ -98,6 +98,7 @@ module "endpoints" {
   name_prefix = var.name_prefix
   environment = var.environment
   region      = var.region
+  component   = "platform"
 
   vpc_id     = module.network.vpc_id
   subnet_ids = module.network.private_subnet_ids

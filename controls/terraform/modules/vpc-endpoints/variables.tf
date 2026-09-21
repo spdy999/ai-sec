@@ -56,3 +56,9 @@ variable "gateway_route_table_ids" {
   type        = list(string)
   default     = []
 }
+
+variable "component" {
+  description = "Which layer owns this set of endpoints. Both roots instantiate this module against the same VPC, so the security group name needs to distinguish them."
+  type        = string
+  default     = ""
+}

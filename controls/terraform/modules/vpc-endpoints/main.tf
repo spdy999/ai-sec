@@ -1,10 +1,17 @@
+locals {
+  # Both layers instantiate this module against the same VPC, so the group name
+  # has to say which one owns it. Without the component suffix the second apply
+  # fails with InvalidGroup.Duplicate, naming a group the first layer created.
+  group_name = var.component == "" ? "${var.name_prefix}-${var.environment}-vpce" : "${var.name_prefix}-${var.environment}-vpce-${var.component}"
+}
+
 resource "aws_security_group" "endpoints" {
-  name        = "${var.name_prefix}-${var.environment}-vpce"
+  name        = local.group_name
   description = "Interface endpoints reachable only from the named workload security group"
   vpc_id      = var.vpc_id
 
   tags = {
-    Name = "${var.name_prefix}-${var.environment}-vpce"
+    Name = local.group_name
   }
 }
 
