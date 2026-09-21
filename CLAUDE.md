@@ -72,7 +72,7 @@ Requires `terraform`, `conftest`, and for the live targets `kind` (0.33+),
 controls/terraform/
   eks-platform/       root: where code runs   - VPC, EKS, nodes, endpoints, jump host
   bedrock-ai/         root: what code does    - Bedrock, guardrail, corpus, vectors, identity
-  modules/            thirteen reusable modules, each with its own README
+  modules/            twelve reusable modules, each with its own README
   fixtures/insecure/  deliberately broken config the gate must reject
   pipeline-iam/       root: run by hand - OIDC provider and the role Actions assumes
 controls/policy/      76 Rego rules, applied to Terraform plans AND Kubernetes YAML
@@ -148,6 +148,27 @@ deploy and destroy are dispatch-only, plus a typed `confirm=destroy` on the
 teardown. The environment block stays because the OIDC trust policy pins
 `environment:production` in the token subject — a job without it cannot assume
 the role.
+
+**The cluster is `terraform-aws-modules/eks`, and that was not a style choice.**
+The hand-written module passed all 76 rules and was still wrong in three ways
+that only a real apply found: no node egress to the S3 prefix list, so ECR
+served image layers the node could never fetch and it sat NotReady for twenty
+minutes with no health issue reported; the CMK policy did not let Auto Scaling
+attach an encrypted root volume, which killed every node inside a minute with
+`Client.InvalidKMSKey.InvalidState`; and the default addons were never
+declared. Upstream gets all three right. Its
+`node_security_group_enable_recommended_rules` default opens node egress to
+0.0.0.0/0 and is turned off here, with every rule named instead.
+
+**The platform layer no longer plans offline; the AI layer still does.**
+Upstream reads `aws_caller_identity`, `aws_partition` and
+`aws_iam_session_context` during plan, so `make plan` renders `bedrock-ai`
+only. `eks-platform` is gated in the deploy job instead — `terraform show -json
+tf.plan` piped into `make policy-plan`, against the saved plan immediately
+before it is applied. Stronger evidence than the offline render it replaces,
+since the bytes the rules read are the bytes that run, but no longer free: a
+contributor without an account cannot check that layer. The negative fixtures,
+the workload manifests and the coverage gate are untouched and still offline.
 
 **`for_each` cannot iterate a security group ID or a role ARN.** Both are
 unknown until apply, and Terraform refuses to plan a `for_each` whose *keys* it
@@ -262,16 +283,22 @@ CloudWatch). `docs/RUNBOOK.md` is written: operational (how to run things);
 README stays the reviewer-facing what/why/proof doc — don't duplicate content
 between them.
 
-**The deployment pipeline has run.** The first dispatch was on 2026-09-21 and
-took several rounds: the assume-role denial (GitHub's ID-qualified OIDC
-subject), three deploy-role permission gaps, a bastion network interface
-conflict, a cost monitor that already existed at account scope, a
-service-linked role ARN without its path, a missing `eks` interface endpoint
-that left nodes unable to bootstrap, and Auto Scaling having no grant on the
-CMK for encrypted node volumes. Each fix is its own `fix(infra)` commit. At the
-end of the session an `infra provision` run was still applying `eks-platform`,
-so the layer is not confirmed green and live resources are billing. Check the
-run and tear down before leaving it.
+**Provisioned once, torn down, now rebuilt on the upstream module.** The first
+live run on 2026-09-21 took six rounds of fixes, every one of which the offline
+gate had passed clean: GitHub's ID-qualified OIDC subject, the bastion launch
+template carrying network settings the instance also carried (twice — security
+group, then subnet), the Cost Explorer monitor type and then its
+one-per-account limit, a service-linked role read authorised against an
+unpathed ARN, Auto Scaling having no grant on the CMK, and the missing S3
+prefix list egress. Each is its own `fix(infra)` commit.
+
+The `eks` interface endpoint was added during that session on a theory that
+turned out to be wrong — nodeadm takes its cluster config from user-data, not
+from `eks:DescribeCluster`. It is harmless and left in place, but it is not
+what fixed the bootstrap; the S3 prefix list rule was, proven by watching the
+node's secondary IP count go from 1 to 12 within seconds of the rule existing.
+
+`infra-destroy` ran clean at the end of the session. The account is empty.
 
 **The deploy role is service-scoped where it must be, resource-scoped where it
 can be.** `ec2:*`, `eks:*`, `kms:*` and friends act on resources that do not

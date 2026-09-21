@@ -134,5 +134,29 @@ jobs:
           fi
           terraform -chdir="$TF_DIR" plan -input=false -no-color $DESTROY $VAR_FILES -out=tf.plan
 
+      # The platform layer is built on terraform-aws-modules/eks, which reads
+      # aws_caller_identity during plan and therefore cannot be rendered without
+      # an account. `make ci` covers every other layer offline; this covers that
+      # one here, against the saved plan about to be applied -- so the bytes the
+      # rules inspect are the bytes that run, not an offline approximation.
+      #
+      # Skipped on destroy: a destroy plan removes resources, and a rule that
+      # asks whether a resource is configured correctly has nothing to read.
+      - name: install conftest
+        if: inputs.action == 'apply'
+        run: |
+          set -euo pipefail
+          curl -sSL -o conftest.tar.gz \
+            "https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz"
+          tar xzf conftest.tar.gz conftest
+          sudo mv conftest /usr/local/bin/
+
+      - name: policy gate on the plan being applied
+        if: inputs.action == 'apply'
+        run: |
+          set -euo pipefail
+          terraform -chdir="$TF_DIR" show -json tf.plan > "$TF_DIR/plan.json"
+          make policy-plan PLAN="$TF_DIR/plan.json"
+
       - name: ${{ inputs.action }}
         run: terraform -chdir="$TF_DIR" apply -input=false -no-color tf.plan

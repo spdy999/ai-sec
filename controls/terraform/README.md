@@ -38,8 +38,7 @@ every value the gate inspects a concrete string at plan time.
 | `encryption-key` | Customer-managed KMS key | Rotation on; used twice so platform and AI keys are separate |
 | `network` | VPC, private subnets, flow logs | No internet gateway, no NAT, no default route |
 | `vpc-endpoints` | Endpoint security group and endpoints | Per-endpoint policy: what may be done *through this path* |
-| `eks-cluster` | Control plane, OIDC provider, access | Private API, CMK-encrypted Secrets, audit logs, no bootstrap admin |
-| `eks-nodes` | Launch template and node group | IMDSv2 required, hop limit 1 |
+| `eks-cluster` | `terraform-aws-modules/eks`, configured | Private API, CMK-encrypted Secrets, audit logs, no bootstrap admin, no 0.0.0.0/0 node egress |
 | `bastion` | Operator jump host | No ingress rules at all; reachable only through Session Manager |
 | `rag-documents` | Source corpus bucket | Unencrypted uploads denied by bucket policy; versioned for poisoning rollback |
 | `vector-store` | OpenSearch Serverless collection | `AllowFromPublic = false`, CMK, VPC endpoint only |

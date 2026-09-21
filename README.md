@@ -24,7 +24,7 @@ make ci     # the gate chain the pipeline enforces
 controls/terraform/
   eks-platform/       root: where code runs   - VPC, EKS, nodes, endpoints, jump host, registry
   bedrock-ai/         root: what code does    - Bedrock, guardrail, corpus, vectors, identity
-  modules/            thirteen reusable modules, each with its own README
+  modules/            twelve reusable modules, each with its own README
   fixtures/insecure/  deliberately broken config the gate must reject
 controls/policy/      76 Rego rules, applied to Terraform plans AND Kubernetes YAML
 controls/kubernetes/  base manifests, Kyverno policies, and manifests that must be refused
@@ -44,7 +44,8 @@ it accepts good input.
 
 | Claim | Proof | Command |
 |---|---|---|
-| Both layers satisfy every rule | 76 rules, 0 violations | `make policy` |
+| The AI layer satisfies every rule, offline | 76 rules, 0 violations | `make policy` |
+| The platform layer satisfies every rule | 76 rules against the plan being applied | deploy pipeline, `make policy-plan` |
 | The gate refuses insecure infrastructure | 60 violations found in the fixture | `make policy-negative` |
 | The gate refuses insecure workloads | 29 violations found in `bad/` | `make policy-k8s-negative` |
 | No rule is decorative | 72 of 76 rules proven to fire; 4 exempt, each named | `make policy-coverage` |

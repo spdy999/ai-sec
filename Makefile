@@ -37,7 +37,7 @@ KIND    := KIND_EXPERIMENTAL_PROVIDER=podman kind
 # enforced rather than assumed.
 NO_AWS := env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN -u AWS_PROFILE
 
-.PHONY: help init fmt validate plan plan-insecure policy policy-negative \
+.PHONY: help init fmt validate plan plan-insecure policy policy-plan policy-negative \
         policy-k8s policy-k8s-negative policy-coverage \
         kind-up kind-down k8s-apply k8s-admit \
         k8s-demo netpol-proof \
@@ -46,8 +46,9 @@ NO_AWS := env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN
 help:
 	@echo "make demo            full walkthrough for the presentation"
 	@echo "make ci              the gate chain the pipeline enforces"
-	@echo "make plan            render both infrastructure layers offline"
-	@echo "make policy          prove both secure layers pass every rule"
+	@echo "make plan            render the AI layer offline"
+	@echo "make policy          prove the AI layer passes every rule"
+	@echo "make policy-plan     run the rules against a plan.json (PLAN=...)"
 	@echo "make policy-negative prove the gate rejects insecure config"
 	@echo "make policy-k8s      prove the workload manifests pass every rule"
 	@echo "make policy-coverage prove every rule fires against a fixture"
@@ -71,11 +72,6 @@ validate: init
 	@$(TF) -chdir=$(TF_EKS) validate -no-color
 	@$(TF) -chdir=$(TF_BEDROCK) validate -no-color
 
-$(PLAN_EKS): $(wildcard $(TF_EKS)/*.tf) $(MODULE_SRC)
-	@$(TF) -chdir=$(TF_EKS) init -input=false -no-color >/dev/null
-	@$(NO_AWS) $(TF) -chdir=$(TF_EKS) plan -input=false -no-color -out=tf.plan >/dev/null
-	@$(TF) -chdir=$(TF_EKS) show -json tf.plan > $@
-
 $(PLAN_BEDROCK): $(wildcard $(TF_BEDROCK)/*.tf) $(MODULE_SRC)
 	@$(TF) -chdir=$(TF_BEDROCK) init -input=false -no-color >/dev/null
 	@$(NO_AWS) $(TF) -chdir=$(TF_BEDROCK) plan -input=false -no-color -out=tf.plan >/dev/null
@@ -86,18 +82,27 @@ $(PLAN_FIXTURE): $(wildcard $(FIXTURE_DIR)/*.tf)
 	@$(NO_AWS) $(TF) -chdir=$(FIXTURE_DIR) plan -input=false -no-color -out=tf.plan >/dev/null
 	@$(TF) -chdir=$(FIXTURE_DIR) show -json tf.plan > $@
 
-# Renders both plans to JSON. These are the artefacts every policy runs against.
-plan: $(PLAN_EKS) $(PLAN_BEDROCK)
-	@echo "eks-platform layer: $$(jq '[.resource_changes[] | select(.mode == "managed")] | length' $(PLAN_EKS)) resources planned offline"
+# The AI layer renders offline. The platform layer does not, since it was moved
+# onto terraform-aws-modules/eks, which reads aws_caller_identity and two other
+# data sources during plan. That layer is gated against its real plan in the
+# deploy pipeline instead -- stronger evidence, on later evidence: the bytes
+# checked are the bytes applied, not an offline approximation of them.
+plan: $(PLAN_BEDROCK)
 	@echo "bedrock-ai layer:   $$(jq '[.resource_changes[] | select(.mode == "managed")] | length' $(PLAN_BEDROCK)) resources planned offline"
 	@echo "no AWS account contacted"
 
 plan-insecure: $(PLAN_FIXTURE)
 
-# Both secure layers must pass every rule.
-policy: $(PLAN_EKS) $(PLAN_BEDROCK)
-	@$(GATE) pass $(PLAN_EKS) "eks-platform layer  (network, Kubernetes, nodes)"
+# The layer that can be rendered without an account.
+policy: $(PLAN_BEDROCK)
 	@$(GATE) pass $(PLAN_BEDROCK) "bedrock-ai layer    (guardrail, corpus, vectors, identity)"
+
+# The platform layer, against a real plan. Needs AWS credentials, which is why
+# it is not part of `make ci`; the deploy pipeline runs this on the saved plan
+# it is about to apply.
+policy-plan:
+	@test -n "$(PLAN)" || { echo "usage: make policy-plan PLAN=path/to/plan.json"; exit 2; }
+	@$(GATE) pass $(PLAN) "planned infrastructure"
 
 # The insecure fixture must FAIL. A policy that has only ever passed has not
 # been tested, so a clean run here is itself a failure.
@@ -189,7 +194,7 @@ demo:
 	@$(MAKE) --no-print-directory plan
 	@echo ""
 	@echo "=================================================================="
-	@echo " 2. Both layers must satisfy every security rule."
+	@echo " 2. The AI layer must satisfy every security rule."
 	@echo "=================================================================="
 	@$(MAKE) --no-print-directory policy
 	@echo ""

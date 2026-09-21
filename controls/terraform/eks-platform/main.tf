@@ -41,7 +41,8 @@ module "network" {
   log_retention_days = var.log_retention_days
 }
 
-# Private API server, CMK-encrypted Secrets, full control plane audit logging.
+# Private API server, CMK-encrypted Secrets, full control plane audit logging,
+# managed addons and the node group. Built on terraform-aws-modules/eks.
 module "eks" {
   source = "../modules/eks-cluster"
 
@@ -49,16 +50,22 @@ module "eks" {
   environment        = var.environment
   kubernetes_version = var.kubernetes_version
 
-  vpc_id     = module.network.vpc_id
-  subnet_ids = module.network.private_subnet_ids
+  vpc_id            = module.network.vpc_id
+  vpc_cidr          = var.vpc_cidr
+  subnet_ids        = module.network.private_subnet_ids
+  s3_prefix_list_id = var.s3_prefix_list_id
 
   kms_key_arn        = module.encryption.arn
   log_retention_days = var.log_retention_days
 
-  # The jump host is the only path to this API server, so its instance role
-  # has to be a named principal here. Listing it explicitly rather than
+  node_instance_type = var.node_instance_type
+  node_desired_size  = var.node_desired_size
+  node_capacity_type = var.node_capacity_type
+
+  # The jump host is the only path to this API server, so its instance role has
+  # to be a named principal here. Listing it explicitly rather than
   # bootstrapping admin from the deploy credentials is the whole point of
-  # bootstrap_cluster_creator_admin_permissions being false.
+  # enable_cluster_creator_admin_permissions being false.
   admin_principals = merge(
     { for idx, arn in var.cluster_admin_principal_arns : "operator-${idx}" => arn },
     { bastion = module.bastion.role_arn },
@@ -132,37 +139,6 @@ module "endpoints" {
   gateway_route_table_ids = module.network.private_route_table_ids
 }
 
-# Wired here rather than inside either module: the node security group and the
-# endpoint security group each need the other's ID, and the root module is where
-# both are known.
-resource "aws_vpc_security_group_egress_rule" "nodes_to_endpoints" {
-  security_group_id = module.eks.node_security_group_id
-  description       = "HTTPS to the VPC interface endpoints"
-
-  referenced_security_group_id = module.endpoints.security_group_id
-  from_port                    = 443
-  to_port                      = 443
-  ip_protocol                  = "tcp"
-}
-
-# The S3 gateway endpoint is a route, not an ENI, so traffic to it leaves the
-# node as ordinary traffic addressed to S3 and has to be allowed by a prefix
-# list rule. Nothing in the interface endpoint rules covers it.
-#
-# Without this the node boots, the kubelet starts, and the node never becomes
-# Ready: ECR serves image layers out of S3, so the VPC CNI and kube-proxy images
-# never arrive. The node group stays in CREATING for twenty minutes with no
-# health issue, and the node itself looks healthy the whole time.
-resource "aws_vpc_security_group_egress_rule" "nodes_to_s3" {
-  security_group_id = module.eks.node_security_group_id
-  description       = "HTTPS to S3 through the gateway endpoint, for ECR image layers"
-
-  prefix_list_id = var.s3_prefix_list_id
-  from_port      = 443
-  to_port        = 443
-  ip_protocol    = "tcp"
-}
-
 resource "aws_vpc_security_group_egress_rule" "bastion_to_endpoints" {
   security_group_id = module.bastion.security_group_id
   description       = "HTTPS to the SSM interface endpoints"
@@ -203,33 +179,6 @@ resource "aws_vpc_security_group_egress_rule" "bastion_to_nodes" {
   ip_protocol                  = "tcp"
 }
 
-resource "aws_vpc_security_group_ingress_rule" "nodes_from_bastion" {
-  security_group_id = module.eks.node_security_group_id
-  description       = "kubectl port-forward from the operator jump host"
-
-  referenced_security_group_id = module.bastion.security_group_id
-  from_port                    = 10250
-  to_port                      = 10250
-  ip_protocol                  = "tcp"
-}
-
-# IMDSv2 required, hop limit 1, encrypted root volumes, kubelet permissions only.
-module "nodes" {
-  source = "../modules/eks-nodes"
-
-  name_prefix = var.name_prefix
-  environment = var.environment
-
-  cluster_name      = module.eks.cluster_name
-  subnet_ids        = module.network.private_subnet_ids
-  security_group_id = module.eks.node_security_group_id
-  kms_key_arn       = module.encryption.arn
-
-  instance_type = var.node_instance_type
-  desired_size  = var.node_desired_size
-  capacity_type = var.node_capacity_type
-}
-
 # Immutable tags, scan on push, CMK-encrypted layers, pull restricted to the
 # node role. There is no route to Docker Hub from this VPC, so this is the only
 # registry the cluster can pull from at all.
@@ -241,7 +190,7 @@ module "registry" {
   repository_name = "mediation"
 
   kms_key_arn         = module.encryption.arn
-  pull_principal_arns = [module.nodes.node_role_arn]
+  pull_principal_arns = [module.eks.node_role_arn]
 }
 
 # Free, and the difference between a three dollar demo and a four figure
