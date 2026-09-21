@@ -65,7 +65,9 @@ init:
 fmt:
 	@$(TF) -chdir=controls/terraform fmt -check -recursive
 
-validate:
+# `validate` needs the modules on disk. A clean checkout has no .terraform/,
+# so CI failed here with "Module not installed" until init became a prerequisite.
+validate: init
 	@$(TF) -chdir=$(TF_EKS) validate -no-color
 	@$(TF) -chdir=$(TF_BEDROCK) validate -no-color
 
