@@ -99,9 +99,14 @@ module "endpoints" {
   endpoint_az_count = var.endpoint_az_count
 
   # ec2 is not optional: the VPC CNI calls the EC2 API to attach ENIs, and with
-  # no NAT gateway there is no other route to it. The eks endpoint is left out
-  # deliberately -- nothing in this cluster calls the EKS control plane API, and
-  # every endpoint is billed per ENI per hour.
+  # no NAT gateway there is no other route to it.
+  #
+  # eks is not optional either, which is not obvious and cost a provisioning
+  # run to learn. Node bootstrap calls eks:DescribeCluster to discover the API
+  # server endpoint and the cluster CA before the kubelet starts. Without a
+  # route to it the node launches, fails to join, is replaced, and the node
+  # group sits in CREATING until it times out -- with no health issue reported,
+  # because nothing ever got far enough to report one.
   #
   # ssm, ssmmessages and ec2messages are the jump host's three: the agent
   # registers against ssm, the session data channel is ssmmessages, and
@@ -114,6 +119,7 @@ module "endpoints" {
     "ecr.dkr",
     "sts",
     "logs",
+    "eks",
     "ssm",
     "ssmmessages",
     "ec2messages",
