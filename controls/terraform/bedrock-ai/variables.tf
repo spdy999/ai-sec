@@ -142,3 +142,9 @@ variable "chat_model_id" {
   type        = string
   default     = "anthropic.claude-sonnet-4-5-20250929-v1:0"
 }
+
+variable "ephemeral_environment" {
+  description = "True when this deployment exists to be torn down again -- the demo account. It lets terraform destroy delete the CloudTrail bucket with its object versions still in it. Left false, a teardown fails on BucketNotEmpty and stops before the cluster layer, which is the correct behaviour for a real audit log store and the wrong one for a lab."
+  type        = bool
+  default     = false
+}

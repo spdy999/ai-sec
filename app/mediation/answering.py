@@ -1,15 +1,21 @@
-"""The model call, with the guardrail attached.
+"""The prompt, and the guarded model call.
 
-`guardrailIdentifier` is passed on every invocation. It is not a convenience:
-the IRSA policy conditions `bedrock:InvokeModel` on
-`bedrock:GuardrailIdentifier`, so an unguarded call from this pod is refused by
-IAM before it reaches Bedrock. Removing the argument does not quietly weaken the
-service, it stops it working -- which is the property worth having.
+This module builds the prompt and nothing else decides how it is sent. The
+guardrail lives in the provider, and in both providers it is not something this
+code can choose to skip:
+
+  bedrock  the IRSA policy conditions `bedrock:InvokeModel` on
+           `bedrock:GuardrailIdentifier`, so an unguarded call from this pod is
+           refused by IAM before it reaches Bedrock.
+
+  local    NetworkPolicy gives this pod no egress to the model at all. Its only
+           route to inference is the guard service.
+
+Different mechanisms, same property: removing the guardrail does not quietly
+weaken the service, it stops it working.
 """
 
-import json
-
-from . import aws, config
+from . import providers
 
 SYSTEM_PROMPT = """You are an internal assistant for staff of this company.
 
@@ -38,38 +44,10 @@ def _prompt(question: str, passages: list[dict]) -> str:
 
 
 def answer(question: str, passages: list[dict]) -> dict:
-    """Invoke the approved model behind the guardrail.
+    """Ask the approved model, behind the guardrail.
 
     Returns the text plus whether the guardrail intervened, because "the
     guardrail blocked this" is the interesting event and must reach the
     telemetry log rather than being flattened into an apology.
     """
-    response = aws.bedrock.invoke_model(
-        modelId=config.CHAT_MODEL_ID,
-        guardrailIdentifier=config.GUARDRAIL_ID,
-        guardrailVersion=config.GUARDRAIL_VERSION,
-        trace="ENABLED",
-        body=json.dumps(
-            {
-                "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": 800,
-                "temperature": 0,
-                "messages": [{"role": "user", "content": _prompt(question, passages)}],
-            }
-        ),
-    )
-
-    payload = json.loads(response["body"].read())
-
-    # Bedrock replaces the model's output with its own when the guardrail
-    # intervenes, and says so in amazon-bedrock-guardrailAction.
-    intervened = payload.get("amazon-bedrock-guardrailAction") == "INTERVENED"
-
-    blocks = payload.get("content", [])
-    text = "".join(block.get("text", "") for block in blocks if block.get("type") == "text")
-
-    return {
-        "text": text or "The guardrail blocked this response.",
-        "guardrail_intervened": intervened,
-        "stop_reason": payload.get("stop_reason"),
-    }
+    return providers.generate(_prompt(question, passages))

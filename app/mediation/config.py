@@ -3,6 +3,12 @@
 Everything here arrives as an environment variable from the ConfigMap that
 Terraform's outputs populate. Nothing is discovered at runtime: a service that
 looks up its own guardrail ID can be pointed at a different one.
+
+MODEL_PROVIDER selects which backend the process talks to. It is read first,
+because which variables are mandatory depends on it: demanding a Bedrock
+guardrail ID from a process that will never call Bedrock would be a startup
+failure with no security meaning, and demanding nothing would let a Bedrock
+deployment start with no guardrail at all. Both halves stay strict.
 """
 
 import os
@@ -15,16 +21,51 @@ def _required(name: str) -> str:
     return value
 
 
+def _flag(name: str, default: str = "false") -> bool:
+    return os.environ.get(name, default).strip().lower() in {"1", "true", "yes"}
+
+
+PROVIDER = os.environ.get("MODEL_PROVIDER", "bedrock").strip().lower()
+
 AWS_REGION = os.environ.get("AWS_REGION", "eu-central-1")
 
-# The guardrail is not optional and not defaulted. Starting without one would
-# mean answering questions with no server-side filtering at all, which is the
-# failure this service exists to prevent.
-GUARDRAIL_ID = _required("BEDROCK_GUARDRAIL_ID")
-GUARDRAIL_VERSION = _required("BEDROCK_GUARDRAIL_VERSION")
+if PROVIDER == "bedrock":
+    # The guardrail is not optional and not defaulted. Starting without one
+    # would mean answering questions with no server-side filtering at all,
+    # which is the failure this service exists to prevent.
+    GUARDRAIL_ID = _required("BEDROCK_GUARDRAIL_ID")
+    GUARDRAIL_VERSION = _required("BEDROCK_GUARDRAIL_VERSION")
 
-CHAT_MODEL_ID = _required("BEDROCK_CHAT_MODEL_ID")
-EMBEDDING_MODEL_ID = _required("BEDROCK_EMBEDDING_MODEL_ID")
+    CHAT_MODEL_ID = _required("BEDROCK_CHAT_MODEL_ID")
+    EMBEDDING_MODEL_ID = _required("BEDROCK_EMBEDDING_MODEL_ID")
+
+    OLLAMA_ENDPOINT = ""
+    GUARD_ENDPOINT = ""
+    LOCAL_TIMEOUT_SECONDS = 0
+    VECTOR_USERNAME = ""
+    VECTOR_PASSWORD = ""
+    VECTOR_USE_TLS = True
+    VECTOR_VERIFY_CERTS = True
+else:
+    GUARDRAIL_ID = ""
+    GUARDRAIL_VERSION = ""
+
+    CHAT_MODEL_ID = os.environ.get("CHAT_MODEL_ID", "qwen2.5:3b")
+    EMBEDDING_MODEL_ID = os.environ.get("EMBEDDING_MODEL_ID", "nomic-embed-text")
+
+    # The model endpoint is here only for embeddings. Generation goes through
+    # GUARD_ENDPOINT, and NetworkPolicy is what stops this pod taking the
+    # shortcut -- see providers/local.py.
+    OLLAMA_ENDPOINT = _required("OLLAMA_ENDPOINT").rstrip("/")
+    GUARD_ENDPOINT = _required("GUARD_ENDPOINT").rstrip("/")
+    LOCAL_TIMEOUT_SECONDS = int(os.environ.get("LOCAL_TIMEOUT_SECONDS", "120"))
+
+    # Read-only credentials. Ingestion authenticates as a different user; see
+    # the write separation note in providers/local.py.
+    VECTOR_USERNAME = _required("VECTOR_USERNAME")
+    VECTOR_PASSWORD = _required("VECTOR_PASSWORD")
+    VECTOR_USE_TLS = _flag("VECTOR_USE_TLS", "false")
+    VECTOR_VERIFY_CERTS = _flag("VECTOR_VERIFY_CERTS", "false")
 
 VECTOR_ENDPOINT = _required("VECTOR_COLLECTION_ENDPOINT")
 VECTOR_INDEX = os.environ.get("VECTOR_INDEX", "genai-corpus")

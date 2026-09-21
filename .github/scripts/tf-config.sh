@@ -60,6 +60,15 @@ account_id   = "${account_id}"
 region       = "${region}"
 EOF
 
+# This account exists to be provisioned and torn down again, so the CloudTrail
+# bucket is allowed to be deleted with its object versions still in it. Without
+# it a teardown fails on BucketNotEmpty and stops before the cluster layer,
+# leaving the expensive half of the platform running. A real audit log store
+# should refuse exactly that, which is why the default is false in the module.
+if [ "${key}" = "bedrock-ai" ]; then
+  echo "ephemeral_environment = true" >> "${dir}/ci.auto.tfvars"
+fi
+
 if [ "${key}" = "eks-platform" ] && [ -n "${COST_ALERT_EMAIL:-}" ]; then
   echo "cost_alert_emails = [\"${COST_ALERT_EMAIL}\"]" >> "${dir}/ci.auto.tfvars"
 fi

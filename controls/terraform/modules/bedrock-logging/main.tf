@@ -94,6 +94,16 @@ resource "aws_cloudtrail" "this" {
 
 resource "aws_s3_bucket" "trail" {
   bucket = "${var.name_prefix}-cloudtrail-${var.environment}-${var.account_id}"
+
+  # Versioning is on below, and CloudTrail writes continuously, so an ordinary
+  # destroy leaves non-current versions and delete markers behind and fails with
+  # BucketNotEmpty -- taking the rest of the teardown with it, because the AI
+  # layer must be destroyed before the cluster it federates with.
+  #
+  # Off by default. A production audit log store should refuse to be deleted by
+  # a terraform destroy; this is set true only for the ephemeral demo
+  # environment, which exists to be torn down.
+  force_destroy = var.force_destroy_trail_bucket
 }
 
 resource "aws_s3_bucket_public_access_block" "trail" {
