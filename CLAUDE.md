@@ -78,6 +78,9 @@ controls/terraform/
 controls/policy/      76 Rego rules, applied to Terraform plans AND Kubernetes YAML
 controls/kubernetes/  base manifests, Kyverno policies, manifests that must be refused,
                       and render.sh which substitutes applied state into them
+controls/data/corpus/ six synthetic markdown documents, uploaded by the bedrock-ai
+                      layer: two retrievable, one group-restricted, three that trip
+                      the guardrail
 app/                  the only custom code: mediation service (FastAPI) and its
                       React front-end, bundled into one image
 .github/workflows/    security.yml (gate chain, mirrors make ci); tf-reusable-workflow.yaml
@@ -259,13 +262,16 @@ CloudWatch). `docs/RUNBOOK.md` is written: operational (how to run things);
 README stays the reviewer-facing what/why/proof doc — don't duplicate content
 between them.
 
-**The deployment pipeline is wired but has never run.** `pipeline-iam` is
-applied, the OIDC provider and role exist, the state bucket is live in
-eu-central-1 (versioned, CMK, public access blocked, TLS-only), and
-`AWS_DEPLOY_ROLE_ARN`, `TF_STATE_BUCKET`, `COST_ALERT_EMAIL` plus the
-`production` environment are all set. **Nothing has been provisioned.** The
-first dispatch is what proves the federation works and whether Bedrock model
-access is granted in the account.
+**The deployment pipeline has run.** The first dispatch was on 2026-09-21 and
+took several rounds: the assume-role denial (GitHub's ID-qualified OIDC
+subject), three deploy-role permission gaps, a bastion network interface
+conflict, a cost monitor that already existed at account scope, a
+service-linked role ARN without its path, a missing `eks` interface endpoint
+that left nodes unable to bootstrap, and Auto Scaling having no grant on the
+CMK for encrypted node volumes. Each fix is its own `fix(infra)` commit. At the
+end of the session an `infra provision` run was still applying `eks-platform`,
+so the layer is not confirmed green and live resources are billing. Check the
+run and tear down before leaving it.
 
 **The deploy role is service-scoped where it must be, resource-scoped where it
 can be.** `ec2:*`, `eks:*`, `kms:*` and friends act on resources that do not
