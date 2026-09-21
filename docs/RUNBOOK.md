@@ -27,7 +27,7 @@ while editing Terraform or Rego.
 
 ```bash
 make plan             # render both roots to plan.json
-make policy           # both secure layers pass all 70 rules
+make policy           # both secure layers pass all 71 rules
 make policy-negative  # insecure fixture must FAIL (a clean run is a bug)
 make policy-k8s       # workload manifests pass
 make policy-coverage  # every rule fires against a fixture
@@ -68,7 +68,7 @@ may not be yours.
 ## 4. Real AWS deploy
 
 Two ways in: the pipeline (§4a, normal) and by hand (§4b, for when the pipeline
-is not an option). Both deploy for real, in `eu-central-1`, at roughly $16/day
+is not an option). Both deploy for real, in `eu-central-1`, at roughly $17/day
 (71% OpenSearch Serverless). There is still no `apply`/`destroy` Makefile
 target on purpose — don't add one without asking.
 
@@ -166,12 +166,54 @@ output to five examples plus a count; unset (as CI leaves it) for the full
 list — `make policy-negative` / `make policy-k8s-negative` alone always show
 everything.
 
+## 5a. Reaching the live platform
+
+There is no public endpoint anywhere in this design: the API server is private,
+the nodes are in private subnets, and there is no internet gateway. Everything
+below goes through the jump host over Session Manager, so it needs no inbound
+rule and no SSH key.
+
+Prerequisite: the Session Manager plugin for the AWS CLI, and credentials that
+can call `ssm:StartSession` on the instance.
+
+```bash
+# 1. the instance id, from the platform layer's state
+terraform -chdir=controls/terraform/eks-platform output -raw bastion_instance_id
+
+# 2. a shell on the jump host
+aws-vault exec pun100 -- aws ssm start-session \
+  --region eu-central-1 --target <instance-id>
+```
+
+To drive the cluster from your own laptop instead of from the jump host's
+shell, forward the private API server through it and point kubectl at
+localhost:
+
+```bash
+aws-vault exec pun100 -- aws ssm start-session \
+  --region eu-central-1 --target <instance-id> \
+  --document-name AWS-StartPortForwardingSessionToRemoteHost \
+  --parameters '{"host":["<cluster-endpoint-host>"],"portNumber":["443"],"localPortNumber":["8443"]}'
+```
+
+Then, in a second terminal, reach the mediation service:
+
+```bash
+kubectl --context <ctx> -n genai port-forward svc/genai-mediation 8443:443
+```
+
+Never run this against the default kubectl context: it is a real work cluster.
+Name the context explicitly on every call, exactly as the Makefile does for
+kind.
+
 ## 6. Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
 | `plan` fails asking for real AWS creds | ran with `-var offline_plan=false` or unset default, or real `AWS_*` env vars leaking in | offline targets run under `env -u AWS_ACCESS_KEY_ID ...` (`$(NO_AWS)` in the Makefile) — don't override `offline_plan` for offline work |
 | A rule checking a cross-resource attribute false-positives | attribute is unresolved at plan time, sitting in `resource_changes[].change.after_unknown`, not `planned_values` | use `lib.unknown_at(address, path)` in the rule |
+| `Invalid for_each argument` after adding a client or an admin principal | the value is a security group ID or role ARN, unknown until apply, used as a `for_each` **key** | pass a `map(string)` keyed by a static name (`nodes`, `bastion`), never `toset()` of the unknowns |
+| `aws ssm start-session` hangs or says the target is not connected | the SSM agent has no route: an endpoint missing, or the jump host security group has no egress to it | check `ssm`, `ssmmessages`, `ec2messages` endpoints exist and `bastion_to_endpoints` allows 443 |
 | A refactor "changed" a plan with no real diff | `terraform show -json` reorders `relevant_attributes` every run | compare `jq -S '{planned_values, resource_changes}'`, not the raw file |
 | New rule passes `make policy` but fails `make ci` | `make policy-coverage` requires every rule to fire against a fixture at least once | add/extend a fixture so the rule's message appears in negative output, or add it to the 4-rule exemption list in `controls/policy/coverage.py` with a reason |
 | `infra-provision.yml` fails at `configure-aws-credentials` with `Not authorized to perform sts:AssumeRoleWithWebIdentity` | the job's OIDC subject doesn't match the role's trust policy | the job must declare `environment: production` — the trust policy pins `repo:<owner>/<repo>:environment:production`, not the branch |

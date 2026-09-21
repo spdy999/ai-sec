@@ -64,4 +64,16 @@ if [ "${key}" = "eks-platform" ] && [ -n "${COST_ALERT_EMAIL:-}" ]; then
   echo "cost_alert_emails = [\"${COST_ALERT_EMAIL}\"]" >> "${dir}/ci.auto.tfvars"
 fi
 
+# The jump host AMI. Terraform could read this from an aws_ssm_parameter data
+# source in one line, and that line would make `terraform plan` require AWS
+# credentials, which is the one thing this repository will not do. Resolving it
+# here keeps the roots free of data sources that call AWS.
+if [ "${key}" = "eks-platform" ]; then
+  ami="$(aws ssm get-parameter \
+    --region "${region}" \
+    --name /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64 \
+    --query Parameter.Value --output text)"
+  echo "bastion_ami_id = \"${ami}\"" >> "${dir}/ci.auto.tfvars"
+fi
+
 echo "${dir}: backend -> s3://${bucket}/${key}/terraform.tfstate (${state_region}), account ${account_id}, deploying to ${region}"

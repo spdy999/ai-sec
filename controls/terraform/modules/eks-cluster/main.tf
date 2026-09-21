@@ -162,7 +162,7 @@ resource "aws_vpc_security_group_egress_rule" "nodes_to_nodes" {
 ########################################
 
 resource "aws_eks_access_entry" "admin" {
-  for_each = toset(var.admin_principal_arns)
+  for_each = var.admin_principals
 
   cluster_name  = aws_eks_cluster.this.name
   principal_arn = each.value
@@ -170,7 +170,7 @@ resource "aws_eks_access_entry" "admin" {
 }
 
 resource "aws_eks_access_policy_association" "admin" {
-  for_each = toset(var.admin_principal_arns)
+  for_each = var.admin_principals
 
   cluster_name  = aws_eks_cluster.this.name
   principal_arn = each.value

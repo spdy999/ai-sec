@@ -40,6 +40,7 @@ every value the gate inspects a concrete string at plan time.
 | `vpc-endpoints` | Endpoint security group and endpoints | Per-endpoint policy: what may be done *through this path* |
 | `eks-cluster` | Control plane, OIDC provider, access | Private API, CMK-encrypted Secrets, audit logs, no bootstrap admin |
 | `eks-nodes` | Launch template and node group | IMDSv2 required, hop limit 1 |
+| `bastion` | Operator jump host | No ingress rules at all; reachable only through Session Manager |
 | `rag-documents` | Source corpus bucket | Unencrypted uploads denied by bucket policy; versioned for poisoning rollback |
 | `vector-store` | OpenSearch Serverless collection | `AllowFromPublic = false`, CMK, VPC endpoint only |
 | `bedrock-guardrail` | Prompt-attack filter, PII, denied topics | Enforced server-side, so bypassing the app does not bypass it |

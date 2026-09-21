@@ -366,3 +366,14 @@ resource "aws_eks_cluster" "partial_encryption" {
 resource "aws_launch_template" "no_metadata_options" {
   name_prefix = "genai-insecure-nometa-"
 }
+
+# VIOLATION 29: a jump host with a public IP. The subnet it sits in may well be
+# private; asking for a public address on the instance puts an SSH target on the
+# internet regardless, which is exactly the shape Session Manager removes.
+resource "aws_instance" "public_bastion" {
+  ami           = "ami-00000000000000000"
+  instance_type = "t3.micro"
+  subnet_id     = aws_subnet.insecure.id
+
+  associate_public_ip_address = true
+}

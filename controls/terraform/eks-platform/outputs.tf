@@ -41,3 +41,8 @@ output "platform_kms_key_arn" {
   description = "CMK protecting cluster secrets and platform logs."
   value       = module.encryption.arn
 }
+
+output "bastion_instance_id" {
+  description = "Jump host. The target of `aws ssm start-session`; there is no other way in."
+  value       = module.bastion.instance_id
+}

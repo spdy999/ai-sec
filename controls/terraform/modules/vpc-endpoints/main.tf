@@ -9,10 +9,12 @@ resource "aws_security_group" "endpoints" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "https" {
-  security_group_id = aws_security_group.endpoints.id
-  description       = "HTTPS from the workload security group only"
+  for_each = var.client_security_groups
 
-  referenced_security_group_id = var.client_security_group_id
+  security_group_id = aws_security_group.endpoints.id
+  description       = "HTTPS from ${each.key} only"
+
+  referenced_security_group_id = each.value
   from_port                    = 443
   to_port                      = 443
   ip_protocol                  = "tcp"

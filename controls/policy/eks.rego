@@ -177,6 +177,21 @@ deny contains msg if {
 	msg := sprintf("eks: %s assigns public IPs on launch; workload subnets must be private", [resource.address])
 }
 
+# The subnet rule above is about where an instance may be placed. This one is
+# about what the instance asks for: an operator jump host with a public IP is
+# an SSH target, which is the design this VPC exists to avoid. Session Manager
+# needs no inbound address at all.
+deny contains msg if {
+	some resource in lib.typed("aws_instance")
+
+	object.get(resource, ["values", "associate_public_ip_address"], false) == true
+
+	msg := sprintf(
+		"eks: %s requests a public IP; instances in this VPC are reachable only through Session Manager",
+		[resource.address],
+	)
+}
+
 ########################################
 # Egress path
 #

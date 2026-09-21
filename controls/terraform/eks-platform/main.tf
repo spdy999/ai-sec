@@ -51,10 +51,34 @@ module "eks" {
   kms_key_arn        = module.encryption.arn
   log_retention_days = var.log_retention_days
 
-  admin_principal_arns = var.cluster_admin_principal_arns
+  # The jump host is the only path to this API server, so its instance role
+  # has to be a named principal here. Listing it explicitly rather than
+  # bootstrapping admin from the deploy credentials is the whole point of
+  # bootstrap_cluster_creator_admin_permissions being false.
+  admin_principals = merge(
+    { for idx, arn in var.cluster_admin_principal_arns : "operator-${idx}" => arn },
+    { bastion = module.bastion.role_arn },
+  )
 }
 
-# The only route out of the VPC. These five services are what a node needs in
+# No SSH, no public subnet, no inbound rule of any kind. The operator reaches
+# this instance through Session Manager, and reaches the private API server and
+# the mediation service through it.
+module "bastion" {
+  source = "../modules/bastion"
+
+  name_prefix = var.name_prefix
+  environment = var.environment
+
+  vpc_id    = module.network.vpc_id
+  subnet_id = module.network.private_subnet_ids[0]
+
+  kms_key_arn   = module.encryption.arn
+  ami_id        = var.bastion_ami_id
+  instance_type = var.bastion_instance_type
+}
+
+# The only route out of the VPC. These services are what a node needs in
 # order to boot and join the cluster with no internet access at all; the S3
 # gateway endpoint is how ECR image layers are fetched.
 module "endpoints" {
@@ -67,14 +91,33 @@ module "endpoints" {
   vpc_id     = module.network.vpc_id
   subnet_ids = module.network.private_subnet_ids
 
-  client_security_group_id = module.eks.node_security_group_id
-  endpoint_az_count        = var.endpoint_az_count
+  client_security_groups = {
+    nodes   = module.eks.node_security_group_id
+    bastion = module.bastion.security_group_id
+  }
+
+  endpoint_az_count = var.endpoint_az_count
 
   # ec2 is not optional: the VPC CNI calls the EC2 API to attach ENIs, and with
   # no NAT gateway there is no other route to it. The eks endpoint is left out
   # deliberately -- nothing in this cluster calls the EKS control plane API, and
   # every endpoint is billed per ENI per hour.
-  interface_services = ["ec2", "ecr.api", "ecr.dkr", "sts", "logs"]
+  #
+  # ssm, ssmmessages and ec2messages are the jump host's three: the agent
+  # registers against ssm, the session data channel is ssmmessages, and
+  # ec2messages carries Run Command. Session Manager will open a shell with only
+  # the first two, but the third is what makes the host manageable rather than
+  # merely reachable.
+  interface_services = [
+    "ec2",
+    "ecr.api",
+    "ecr.dkr",
+    "sts",
+    "logs",
+    "ssm",
+    "ssmmessages",
+    "ec2messages",
+  ]
 
   gateway_route_table_ids = module.network.private_route_table_ids
 }
@@ -89,6 +132,56 @@ resource "aws_vpc_security_group_egress_rule" "nodes_to_endpoints" {
   referenced_security_group_id = module.endpoints.security_group_id
   from_port                    = 443
   to_port                      = 443
+  ip_protocol                  = "tcp"
+}
+
+resource "aws_vpc_security_group_egress_rule" "bastion_to_endpoints" {
+  security_group_id = module.bastion.security_group_id
+  description       = "HTTPS to the SSM interface endpoints"
+
+  referenced_security_group_id = module.endpoints.security_group_id
+  from_port                    = 443
+  to_port                      = 443
+  ip_protocol                  = "tcp"
+}
+
+resource "aws_vpc_security_group_egress_rule" "bastion_to_cluster" {
+  security_group_id = module.bastion.security_group_id
+  description       = "kubectl to the private Kubernetes API"
+
+  referenced_security_group_id = module.eks.cluster_security_group_id
+  from_port                    = 443
+  to_port                      = 443
+  ip_protocol                  = "tcp"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "cluster_from_bastion" {
+  security_group_id = module.eks.cluster_security_group_id
+  description       = "kubectl from the operator jump host"
+
+  referenced_security_group_id = module.bastion.security_group_id
+  from_port                    = 443
+  to_port                      = 443
+  ip_protocol                  = "tcp"
+}
+
+resource "aws_vpc_security_group_egress_rule" "bastion_to_nodes" {
+  security_group_id = module.bastion.security_group_id
+  description       = "kubectl port-forward reaches the pod through the kubelet"
+
+  referenced_security_group_id = module.eks.node_security_group_id
+  from_port                    = 10250
+  to_port                      = 10250
+  ip_protocol                  = "tcp"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "nodes_from_bastion" {
+  security_group_id = module.eks.node_security_group_id
+  description       = "kubectl port-forward from the operator jump host"
+
+  referenced_security_group_id = module.bastion.security_group_id
+  from_port                    = 10250
+  to_port                      = 10250
   ip_protocol                  = "tcp"
 }
 

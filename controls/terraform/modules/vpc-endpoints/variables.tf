@@ -34,9 +34,9 @@ variable "endpoint_az_count" {
   }
 }
 
-variable "client_security_group_id" {
-  description = "The only security group permitted to reach these endpoints on 443."
-  type        = string
+variable "client_security_groups" {
+  description = "Security groups permitted to reach the endpoints on 443, keyed by a static client name. A map rather than a list because a security group ID is unknown until apply, and for_each over unknown values cannot be planned."
+  type        = map(string)
 }
 
 variable "interface_services" {

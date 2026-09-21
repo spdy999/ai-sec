@@ -126,6 +126,12 @@ data "aws_iam_policy_document" "deploy_infrastructure" {
       "aoss:*",
       "budgets:*",
       "sts:GetCallerIdentity",
+
+      # The deploy job resolves the jump host AMI from the public Amazon Linux
+      # parameter before planning, because a data source that did it inside
+      # Terraform would stop the roots planning offline.
+      "ssm:GetParameter",
+      "ssm:GetParameters",
     ]
 
     resources = ["*"]
@@ -158,11 +164,23 @@ data "aws_iam_policy_document" "deploy_infrastructure" {
       "iam:DeletePolicyVersion",
       "iam:ListPolicyVersions",
       "iam:TagPolicy",
+
+      # The jump host carries an instance profile. It is a third IAM resource
+      # type, so the prefix has to be named for it as well or EC2 has no way to
+      # hand the instance its role.
+      "iam:CreateInstanceProfile",
+      "iam:DeleteInstanceProfile",
+      "iam:GetInstanceProfile",
+      "iam:AddRoleToInstanceProfile",
+      "iam:RemoveRoleFromInstanceProfile",
+      "iam:TagInstanceProfile",
+      "iam:ListInstanceProfilesForRole",
     ]
 
     resources = [
       "arn:aws:iam::${var.account_id}:role/${var.name_prefix}*",
       "arn:aws:iam::${var.account_id}:policy/${var.name_prefix}*",
+      "arn:aws:iam::${var.account_id}:instance-profile/${var.name_prefix}*",
     ]
   }
 

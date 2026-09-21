@@ -109,3 +109,15 @@ variable "log_retention_days" {
   type        = number
   default     = 90
 }
+
+variable "bastion_ami_id" {
+  description = "AMI for the operator jump host. Read from an SSM public parameter by the deploy job and written into ci.auto.tfvars, rather than by an aws_ssm_parameter data source, because a data source that calls AWS would stop `terraform plan` from running offline. The default is a placeholder: it renders a plan and fails an apply."
+  type        = string
+  default     = "ami-00000000000000000"
+}
+
+variable "bastion_instance_type" {
+  description = "Jump host instance type."
+  type        = string
+  default     = "t3.micro"
+}

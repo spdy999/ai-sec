@@ -25,7 +25,7 @@ implementation inside an already-approved shape does not need re-approval.
 make demo             # the presentation walkthrough: pass, then fail, then verdict
 make ci               # the gate chain the pipeline enforces
 make plan             # render both Terraform layers to plan.json, offline
-make policy           # both secure layers must pass all 70 rules
+make policy           # both secure layers must pass all 71 rules
 make policy-negative  # the insecure fixture must FAIL; a clean run is itself a failure
 make policy-k8s       # workload manifests must pass
 make policy-k8s-negative  # the bad manifests must FAIL
@@ -36,7 +36,7 @@ make validate         # terraform validate both roots (runs init first)
 make clean            # remove generated plan artefacts
 ```
 
-Running one area rather than all seventy rules. There is no per-rule runner,
+Running one area rather than all seventy-one rules. There is no per-rule runner,
 and `conftest --namespace` is a trap here: every rule file is `package main`,
 so `--namespace eks` matches nothing and reports zero failures rather than an
 error. Filter on the message prefix instead:
@@ -48,7 +48,7 @@ conftest test --policy controls/policy --all-namespaces -o json \
 ```
 
 Dropping the `grep` and piping to `cut -d: -f1 | sort | uniq -c` maps the whole
-fixture by area — 20 eks, 7 encryption, 6 model governance, 5 network, 5
+fixture by area — 21 eks, 7 encryption, 6 model governance, 5 network, 5
 logging, 5 iam, 3 cost, 2 residency.
 
 Live cluster targets, which need podman running:
@@ -70,12 +70,12 @@ Requires `terraform`, `conftest`, and for the live targets `kind` (0.33+),
 
 ```
 controls/terraform/
-  eks-platform/       root: where code runs   - VPC, EKS, nodes, endpoints
+  eks-platform/       root: where code runs   - VPC, EKS, nodes, endpoints, jump host
   bedrock-ai/         root: what code does    - Bedrock, guardrail, corpus, vectors, identity
-  modules/            eleven reusable modules, each with its own README
+  modules/            twelve reusable modules, each with its own README
   fixtures/insecure/  deliberately broken config the gate must reject
   pipeline-iam/       root: run by hand - OIDC provider and the role Actions assumes
-controls/policy/      70 Rego rules, applied to Terraform plans AND Kubernetes YAML
+controls/policy/      71 Rego rules, applied to Terraform plans AND Kubernetes YAML
 controls/kubernetes/  base manifests, Kyverno policies, and manifests that must be refused
 .github/workflows/    security.yml (gate chain, mirrors make ci); tf-reusable-workflow.yaml
                       (reusable: the only place terraform runs); infra-provision,
@@ -94,7 +94,8 @@ accepts good input.
 
 **This deploys for real, not just offline.** The user decided against staying
 $0/offline-only. `terraform apply` runs against a real AWS account in
-`eu-central-1`, tuned to roughly $16/day (71% of it OpenSearch Serverless).
+`eu-central-1`, tuned to roughly $17/day (two thirds of it OpenSearch
+Serverless; the jump host and its three SSM endpoints add about $1).
 The Makefile still has no `apply`/`destroy` target — don't add live-deploy
 targets without asking. Deployment is `infra-provision.yml` / `infra-destroy.yml`, both
 dispatch-only. Always tear down after a live session.
@@ -128,6 +129,23 @@ deploy and destroy are dispatch-only, plus a typed `confirm=destroy` on the
 teardown. The environment block stays because the OIDC trust policy pins
 `environment:production` in the token subject — a job without it cannot assume
 the role.
+
+**`for_each` cannot iterate a security group ID or a role ARN.** Both are
+unknown until apply, and Terraform refuses to plan a `for_each` whose *keys* it
+cannot resolve. The endpoint clients and the cluster access entries are
+therefore `map(string)` keyed by a static name — `nodes`, `bastion`,
+`operator-0` — with the unknown value on the right. A `toset()` of ARNs plans
+fine right up until the first entry comes from another resource, then fails
+with "Invalid for_each argument" and nothing else changed.
+
+**The jump host is the only way into the VPC, and it has no ingress rules.**
+There is no internet gateway, no public subnet and no SSH. Access is Session
+Manager, which dials out to the `ssm`, `ssmmessages` and `ec2messages`
+endpoints. Its posture lives in a launch template rather than on the instance
+because the IMDSv2, hop-limit and volume-encryption rules read
+`aws_launch_template`; configured on the instance it would be correct and
+unproven. Its AMI is a variable written by `tf-config.sh` at deploy time — an
+`aws_ssm_parameter` data source would have broken offline plan.
 
 **Offline plan needs mock credentials.** The AWS provider resolves credentials
 during `plan` even with every `skip_*` flag set. `providers.tf` passes
@@ -179,7 +197,7 @@ plans twice and print the same four lines twice. `$(PLAN_EKS)` and friends
 rebuild only when their `.tf` sources are newer.
 
 **Screen output goes through `controls/policy/gate.sh`.** conftest reports one
-"test" per rule per document, so nine manifests against seventy rules reads as
+"test" per rule per document, so nine manifests against seventy-one rules reads as
 "630 tests" — a number that means nothing on a projector. The wrapper reports
 rules, documents and violations, and truncates negative output to `SHOW`
 examples plus a count (the demo sets `SHOW=5`; CI leaves it unset for a full

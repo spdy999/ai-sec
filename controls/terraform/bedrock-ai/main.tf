@@ -65,9 +65,9 @@ module "endpoints" {
   vpc_id     = var.vpc_id
   subnet_ids = var.private_subnet_ids
 
-  client_security_group_id = var.eks_node_security_group_id
-  endpoint_az_count        = var.endpoint_az_count
-  interface_services       = ["bedrock-runtime"]
+  client_security_groups = { nodes = var.eks_node_security_group_id }
+  endpoint_az_count      = var.endpoint_az_count
+  interface_services     = ["bedrock-runtime"]
 
   endpoint_policies = {
     "bedrock-runtime" = data.aws_iam_policy_document.bedrock_endpoint.json

@@ -10,7 +10,7 @@ graph as a file — no AWS account touched for CI.
 
 The demo itself deploys for real. `terraform apply` runs against a real AWS
 account in `eu-central-1`, at the tuned cost defaults in
-`controls/terraform/README.md` (roughly $16/day, mostly OpenSearch
+`controls/terraform/README.md` (roughly $17/day, mostly OpenSearch
 Serverless).
 
 ```bash
@@ -24,9 +24,9 @@ make ci     # the gate chain the pipeline enforces
 controls/terraform/
   eks-platform/       root: where code runs   - VPC, EKS, nodes, endpoints
   bedrock-ai/         root: what code does    - Bedrock, guardrail, corpus, vectors, identity
-  modules/            eleven reusable modules, each with its own README
+  modules/            twelve reusable modules, each with its own README
   fixtures/insecure/  deliberately broken config the gate must reject
-controls/policy/      70 Rego rules, applied to Terraform plans AND Kubernetes YAML
+controls/policy/      71 Rego rules, applied to Terraform plans AND Kubernetes YAML
 controls/kubernetes/  base manifests, Kyverno policies, and manifests that must be refused
 .github/workflows/    the CI gate chain, mirroring make ci
 ```
@@ -43,10 +43,10 @@ it accepts good input.
 
 | Claim | Proof | Command |
 |---|---|---|
-| Both layers satisfy every rule | 70 rules, 0 violations | `make policy` |
+| Both layers satisfy every rule | 71 rules, 0 violations | `make policy` |
 | The gate refuses insecure infrastructure | 53 violations found in the fixture | `make policy-negative` |
 | The gate refuses insecure workloads | 29 violations found in `bad/` | `make policy-k8s-negative` |
-| No rule is decorative | 66 of 70 rules proven to fire; 4 exempt, each named | `make policy-coverage` |
+| No rule is decorative | 67 of 71 rules proven to fire; 4 exempt, each named | `make policy-coverage` |
 | A real cluster enforces admission | four manifests refused by the API server | `make k8s-demo` |
 | Default-deny egress actually blocks | a packet sent before and after the policy | `make netpol-proof` |
 

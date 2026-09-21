@@ -33,10 +33,10 @@ variable "log_retention_days" {
   type        = number
 }
 
-variable "admin_principal_arns" {
-  description = "IAM principals granted cluster admin through access entries. Empty by default: a fresh cluster has no administrators until access is granted as a reviewed change."
-  type        = list(string)
-  default     = []
+variable "admin_principals" {
+  description = "IAM principals granted cluster admin, keyed by a static name. Keyed rather than listed because the jump host role ARN is unknown until apply, and for_each cannot plan over an unknown key."
+  type        = map(string)
+  default     = {}
 }
 
 variable "oidc_thumbprint" {
