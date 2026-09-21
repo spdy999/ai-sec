@@ -123,6 +123,13 @@ module "eks" {
 
   eks_managed_node_groups = {
     mediation = {
+      # Upstream would name this role "mediation-eks-node-group-<hash>", which
+      # carries no platform prefix. The deploy role may only create IAM roles
+      # named genai-assistant*, deliberately, so the name is pinned rather than
+      # the permission widened.
+      iam_role_name            = "${var.name_prefix}-${var.environment}-nodes"
+      iam_role_use_name_prefix = false
+
       instance_types = [var.node_instance_type]
       capacity_type  = var.node_capacity_type
 
