@@ -17,7 +17,20 @@ resource "aws_launch_template" "bastion" {
   image_id      = var.ami_id
   instance_type = var.instance_type
 
-  vpc_security_group_ids = [aws_security_group.bastion.id]
+  # The security group goes inside network_interfaces, not in
+  # vpc_security_group_ids. EC2 rejects a RunInstances request that carries both
+  # a network interface specification and instance-level security groups:
+  #
+  #   InvalidParameterCombination: Network interfaces and an instance-level
+  #   security groups may not be specified on the same request
+  #
+  # and a network interface specification is exactly what asking for no public
+  # IP produces.
+  network_interfaces {
+    associate_public_ip_address = false
+    security_groups             = [aws_security_group.bastion.id]
+    delete_on_termination       = true
+  }
 
   iam_instance_profile {
     name = aws_iam_instance_profile.bastion.name
@@ -64,10 +77,9 @@ resource "aws_instance" "bastion" {
     version = aws_launch_template.bastion.latest_version
   }
 
-  # Stated rather than left to the subnet default. The subnet sets
-  # map_public_ip_on_launch to false, but that is the subnet's property; this is
-  # the instance's, and a reviewer should not have to follow the reference.
-  associate_public_ip_address = false
+  # No public IP is stated in the launch template's network_interfaces block
+  # rather than here: setting it on both is the parameter combination EC2
+  # refuses.
 
   tags = {
     Name = "${var.name_prefix}-${var.environment}-bastion"

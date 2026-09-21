@@ -148,6 +148,12 @@ data "aws_iam_policy_document" "deploy_infrastructure" {
       "bedrock:*",
       "aoss:*",
       "budgets:*",
+
+      # Cost Explorer is its own service. The budget above is `budgets:*`; the
+      # anomaly monitor and its subscription are `ce:*`, and neither takes a
+      # resource-level ARN.
+      "ce:*",
+
       "sts:GetCallerIdentity",
 
       # The deploy job resolves the jump host AMI from the public Amazon Linux
@@ -218,7 +224,15 @@ data "aws_iam_policy_document" "deploy_infrastructure" {
     condition {
       test     = "StringEquals"
       variable = "iam:PassedToService"
-      values   = ["eks.amazonaws.com", "ec2.amazonaws.com"]
+      values = [
+        "eks.amazonaws.com",
+        "ec2.amazonaws.com",
+
+        # VPC flow logs run as their own service principal and are passed the
+        # delivery role. Without this the VPC applies and the flow log that
+        # makes it auditable does not.
+        "vpc-flow-logs.amazonaws.com",
+      ]
     }
   }
 
@@ -306,13 +320,21 @@ data "aws_iam_policy_document" "deploy_infrastructure" {
   }
 
   statement {
-    sid       = "ServiceLinkedRolesForNamedServicesOnly"
-    effect    = "Allow"
-    actions   = ["iam:CreateServiceLinkedRole"]
+    sid    = "ServiceLinkedRolesForNamedServicesOnly"
+    effect = "Allow"
+
+    # CreateNodegroup reads the service-linked role before creating it, and
+    # reports the missing read as "Failed to validate if SLR ... already exists",
+    # which reads like a validation bug rather than a permissions one.
+    actions   = ["iam:CreateServiceLinkedRole", "iam:GetRole"]
     resources = ["arn:aws:iam::${var.account_id}:role/aws-service-role/*"]
 
+    # Only CreateServiceLinkedRole carries iam:AWSServiceName. Applying the
+    # condition to the whole statement would deny the GetRole above, because a
+    # request with no such key never satisfies StringEquals. The resource path
+    # is what scopes the read.
     condition {
-      test     = "StringEquals"
+      test     = "StringEqualsIfExists"
       variable = "iam:AWSServiceName"
 
       values = [
