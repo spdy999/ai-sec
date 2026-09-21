@@ -5,13 +5,25 @@ locals {
   group_name = var.component == "" ? "${var.name_prefix}-${var.environment}-vpce" : "${var.name_prefix}-${var.environment}-vpce-${var.component}"
 }
 
+# name_prefix and create_before_destroy together, not either alone.
+#
+# A security group with a fixed name can only be replaced by destroying it
+# first, and it cannot be destroyed while the endpoints still reference it, so a
+# rename deadlocks: "DependencyViolation: resource sg-... has a dependent
+# object", with the replacement never created. create_before_destroy inverts the
+# order, and that in turn needs a generated name, because two groups cannot
+# share one name in a VPC even for the moment between the two steps.
 resource "aws_security_group" "endpoints" {
-  name        = local.group_name
+  name_prefix = "${local.group_name}-"
   description = "Interface endpoints reachable only from the named workload security group"
   vpc_id      = var.vpc_id
 
   tags = {
     Name = local.group_name
+  }
+
+  lifecycle {
+    create_before_destroy = true
   }
 }
 
