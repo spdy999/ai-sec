@@ -43,7 +43,7 @@ jobs:
 
   bedrock-ai:
     needs: [confirm]
-    uses: ./.github/workflows/tf-layer.yml
+    uses: ./.github/workflows/tf-reusable-workflow.yaml
     with:
       layer: bedrock-ai
       action: destroy
@@ -55,7 +55,7 @@ jobs:
 
   eks-platform:
     needs: [bedrock-ai]
-    uses: ./.github/workflows/tf-layer.yml
+    uses: ./.github/workflows/tf-reusable-workflow.yaml
     with:
       layer: eks-platform
       action: destroy

@@ -102,7 +102,7 @@ gh workflow run infra-eks-platform.yml -f action=apply
 gh workflow run infra-bedrock-ai.yml   -f action=destroy
 ```
 
-Every terraform command lives in `tf-layer.yml`, a reusable workflow the four
+Every terraform command lives in `tf-reusable-workflow.yaml`, a reusable workflow the four
 above call. A caller passes a layer and an action and nothing else — it cannot
 supply its own terraform invocation or skip the gate chain on a first run.
 

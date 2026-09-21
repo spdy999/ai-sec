@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   eks-platform:
-    uses: ./.github/workflows/tf-layer.yml
+    uses: ./.github/workflows/tf-reusable-workflow.yaml
     with:
       layer: eks-platform
       action: apply
@@ -31,7 +31,7 @@ jobs:
 
   bedrock-ai:
     needs: [eks-platform]
-    uses: ./.github/workflows/tf-layer.yml
+    uses: ./.github/workflows/tf-reusable-workflow.yaml
     with:
       layer: bedrock-ai
       action: apply

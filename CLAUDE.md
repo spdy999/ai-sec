@@ -77,7 +77,7 @@ controls/terraform/
   pipeline-iam/       root: run by hand - OIDC provider and the role Actions assumes
 controls/policy/      70 Rego rules, applied to Terraform plans AND Kubernetes YAML
 controls/kubernetes/  base manifests, Kyverno policies, and manifests that must be refused
-.github/workflows/    security.yml (gate chain, mirrors make ci); tf-layer.yml
+.github/workflows/    security.yml (gate chain, mirrors make ci); tf-reusable-workflow.yaml
                       (reusable: the only place terraform runs); infra-provision,
                       infra-destroy, infra-eks-platform, infra-bedrock-ai
                       (dispatch-only callers, OIDC, no stored keys)

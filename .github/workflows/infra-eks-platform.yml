@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   layer:
-    uses: ./.github/workflows/tf-layer.yml
+    uses: ./.github/workflows/tf-reusable-workflow.yaml
     with:
       layer: eks-platform
       action: ${{ inputs.action }}
