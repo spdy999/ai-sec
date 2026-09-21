@@ -81,6 +81,44 @@ spec:
                 configMapKeyRef:
                   name: genai-mediation-config
                   key: guardrail_version
+            - name: BEDROCK_CHAT_MODEL_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: genai-mediation-config
+                  key: chat_model_id
+            - name: BEDROCK_EMBEDDING_MODEL_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: genai-mediation-config
+                  key: embedding_model_id
+            - name: VECTOR_COLLECTION_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: genai-mediation-config
+                  key: vector_collection_endpoint
+            - name: VECTOR_INDEX
+              valueFrom:
+                configMapKeyRef:
+                  name: genai-mediation-config
+                  key: vector_index
+            - name: TELEMETRY_LOG_GROUP
+              valueFrom:
+                configMapKeyRef:
+                  name: genai-mediation-config
+                  key: telemetry_log_group
+            - name: IDENTITY_TOKEN_ISSUER
+              valueFrom:
+                configMapKeyRef:
+                  name: genai-mediation-config
+                  key: identity_token_issuer
+            # The signing key for caller identity tokens. A Secret rather than a
+            # ConfigMap, and never committed: anyone holding it can mint
+            # themselves any group membership.
+            - name: IDENTITY_TOKEN_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: genai-mediation-identity
+                  key: signing_key
 
           volumeMounts:
             - name: aws-token
@@ -88,6 +126,9 @@ spec:
               readOnly: true
             - name: tmp
               mountPath: /tmp
+            - name: tls
+              mountPath: /etc/mediation-tls
+              readOnly: true
 
           livenessProbe:
             httpGet:
@@ -123,3 +164,9 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 64Mi
+
+        # TLS terminates in the pod. "It is inside the VPC" has never been a
+        # reason to carry a bearer token in clear text across a cluster network.
+        - name: tls
+          secret:
+            secretName: genai-mediation-tls

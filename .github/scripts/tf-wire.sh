@@ -4,7 +4,7 @@
 #
 # The two roots are separate on purpose (see CLAUDE.md: merged, the cluster's
 # OIDC issuer URL is unknown at plan time and the rule checking the IRSA trust
-# policy stops firing). The cost of that split is that eight values have to
+# policy stops firing). The cost of that split is that seven values have to
 # cross the boundary. They cross here, read from applied state, so there is no
 # hand-copied tfvars file to drift.
 
@@ -29,7 +29,9 @@ jq -r '
   "eks_oidc_provider_arn      = \"" + .eks_oidc_provider_arn.value + "\"",
   "eks_oidc_provider_url      = \"" + .eks_oidc_provider_url.value + "\"",
   "eks_node_security_group_id = \"" + .eks_node_security_group_id.value + "\"",
-  "private_subnet_ids         = " + (.private_subnet_ids.value | tostring)
+  "private_subnet_ids         = " + (.private_subnet_ids.value | tostring),
+  "ingestion_role_arn         = \"" + .bastion_role_arn.value + "\"",
+  "ingestion_role_name        = \"" + .bastion_role_name.value + "\""
 ' <<<"${outputs}" > "${TF_BEDROCK}/platform.auto.tfvars"
 
 echo "wired ${TF_BEDROCK} to the applied platform layer:"

@@ -27,7 +27,7 @@ while editing Terraform or Rego.
 
 ```bash
 make plan             # render both roots to plan.json
-make policy           # both secure layers pass all 71 rules
+make policy           # both secure layers pass all 76 rules
 make policy-negative  # insecure fixture must FAIL (a clean run is a bug)
 make policy-k8s       # workload manifests pass
 make policy-coverage  # every rule fires against a fixture
@@ -166,6 +166,69 @@ output to five examples plus a count; unset (as CI leaves it) for the full
 list — `make policy-negative` / `make policy-k8s-negative` alone always show
 everything.
 
+## 4c. The application
+
+Order matters: the image needs the registry, the manifests need the image
+digest, and the index needs the corpus bucket. All three come from applied
+state.
+
+**1. Build and push the image.** Dispatch `app-image.yml` with a tag. It runs on
+a GitHub runner rather than the jump host because the jump host has no route to
+the internet and cannot pull a base image or an npm package. The run summary
+prints the digest; nothing downstream uses the tag.
+
+**2. Create the two Secrets.** Neither is committed, in any form, and neither is
+in Terraform state. Run these once, from the jump host, with the cluster
+context pinned:
+
+```bash
+# Signing key for caller identity tokens. Anyone holding it can mint themselves
+# any group membership.
+kubectl --context <ctx> -n genai-platform create secret generic \
+  genai-mediation-identity \
+  --from-literal=signing_key="$(openssl rand -base64 48)"
+
+# TLS for the pod. Self-signed is correct here: the only client is a
+# port-forward from this same host, and the alternative is an unencrypted
+# bearer token crossing the cluster network.
+openssl req -x509 -newkey rsa:2048 -nodes -days 90 \
+  -subj "/CN=genai-mediation.genai-platform.svc" \
+  -keyout tls.key -out tls.crt
+
+kubectl --context <ctx> -n genai-platform create secret tls \
+  genai-mediation-tls --cert=tls.crt --key=tls.key
+rm -f tls.key tls.crt
+```
+
+**3. Render and apply the manifests.** The committed manifests carry synthetic
+identifiers, the same way the Terraform variables do, so the policy gate reads
+the shape that actually ships:
+
+```bash
+IMAGE_DIGEST=sha256:... controls/kubernetes/render.sh
+kubectl --context <ctx> apply -f .rendered/
+```
+
+**4. Index the corpus.** From the jump host, which is the only principal the
+OpenSearch data access policy grants writes to. The service itself can only
+read, which is what stops a prompt injection poisoning the corpus:
+
+```bash
+python -m mediation.ingest \
+  --bucket "$(terraform -chdir=controls/terraform/bedrock-ai output -raw rag_bucket)" \
+  --endpoint "$(terraform -chdir=controls/terraform/bedrock-ai output -raw vector_collection_endpoint)" \
+  --strict --recreate
+```
+
+**5. Mint a token to ask with.** One per identity you want to demonstrate:
+
+```bash
+export IDENTITY_TOKEN_SECRET=<the signing key from step 2>
+
+python -m mediation.tokens alice --groups all-staff
+python -m mediation.tokens dana  --groups all-staff finance-team
+```
+
 ## 5a. Reaching the live platform
 
 There is no public endpoint anywhere in this design: the API server is private,
@@ -196,11 +259,23 @@ aws-vault exec pun100 -- aws ssm start-session \
   --parameters '{"host":["<cluster-endpoint-host>"],"portNumber":["443"],"localPortNumber":["8443"]}'
 ```
 
-Then, in a second terminal, reach the mediation service:
+Then, in a second terminal, reach the mediation service and open
+`https://localhost:8443` — the certificate is self-signed, so the browser will
+ask once:
 
 ```bash
-kubectl --context <ctx> -n genai port-forward svc/genai-mediation 8443:443
+kubectl --context <ctx> -n genai-platform port-forward svc/genai-mediation 8443:443
 ```
+
+What to show, in order:
+
+| Ask as | Question | What proves the control |
+|---|---|---|
+| `alice` (all-staff) | leave carry-over deadline | ordinary retrieval, sources cited |
+| `alice` | Q3 revenue forecast | no sources returned — the passage was never a candidate, not filtered afterwards |
+| `dana` (finance-team) | the same question | the same corpus answers, because entitlement changed and nothing else did |
+| anyone | summarise the customer records document | guardrail intervenes on the PII |
+| anyone | anything, with the token field emptied | 401 before any retrieval happens |
 
 Never run this against the default kubectl context: it is a real work cluster.
 Name the context explicitly on every call, exactly as the Makefile does for

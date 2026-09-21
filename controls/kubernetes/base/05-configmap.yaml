@@ -1,0 +1,32 @@
+# Where the service learns what it is pointed at.
+#
+# Every value here comes from a Terraform output. The committed values are
+# synthetic, the same way the Terraform defaults are: the file is rendered
+# against real state at deploy time by controls/kubernetes/render.sh, so the
+# manifest the policy gate reads and the manifest that is applied have the same
+# shape and differ only in identifiers.
+#
+# Nothing secret lives here. The identity token signing key is a Secret,
+# created out of band, and is never committed in any form.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: genai-mediation-config
+  namespace: genai-platform
+  labels:
+    app.kubernetes.io/name: genai-mediation
+    app.kubernetes.io/part-of: koerber-genai-assistant
+data:
+  guardrail_id: gr000000000000
+  # Pinned, never DRAFT: a console edit must not change production behaviour
+  # without a deployment.
+  guardrail_version: "1"
+
+  chat_model_id: anthropic.claude-sonnet-4-5-20250929-v1:0
+  embedding_model_id: amazon.titan-embed-text-v2:0
+
+  vector_collection_endpoint: https://000000000000.eu-central-1.aoss.amazonaws.com
+  vector_index: genai-corpus
+
+  telemetry_log_group: /aws/genai-assistant/prod/mediation
+  identity_token_issuer: genai-assistant-demo

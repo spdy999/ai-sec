@@ -89,3 +89,35 @@ spec:
       ports:
         - protocol: TCP
           port: 8443
+---
+# Operator access, for `kubectl port-forward` from the jump host.
+#
+# Port-forwarded traffic is opened by the kubelet, so it arrives from the node's
+# own address rather than from a pod, and the gateway rule above does not match
+# it. Without this policy the forward connects and then hangs, which reads like
+# a broken service rather than a working network policy.
+#
+# Scoped to the private subnet range and to 8443. It is a deliberate second door
+# and it is worth being honest about: in production the gateway above is the
+# only way in, and this policy is the one to delete first. It stays because the
+# authenticating gateway is described in the design and not deployed, and
+# because an operator path that exists but is undocumented is worse than one
+# that is written down.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-operator-portforward
+  namespace: genai-platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: genai-mediation
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 10.80.0.0/16
+      ports:
+        - protocol: TCP
+          port: 8443

@@ -46,3 +46,18 @@ output "bastion_instance_id" {
   description = "Jump host. The target of `aws ssm start-session`; there is no other way in."
   value       = module.bastion.instance_id
 }
+
+output "mediation_repository_url" {
+  description = "ECR repository the mediation image is pushed to and the nodes pull from."
+  value       = module.registry.repository_url
+}
+
+output "bastion_role_arn" {
+  description = "Jump host instance role. The AI layer grants it write access to the vector store, so ingestion is an operator action and the service itself can only read."
+  value       = module.bastion.role_arn
+}
+
+output "bastion_role_name" {
+  description = "Jump host instance role name, for the ingestion policy attachment in the AI layer."
+  value       = module.bastion.role_name
+}

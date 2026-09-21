@@ -1,0 +1,111 @@
+# Build the mediation image and push it to the private registry.
+#
+# It runs here rather than on the jump host for a reason that is easy to miss:
+# the jump host has no route to the internet, so it cannot pull a base image or
+# an npm package. The only machine that can both reach the public registries and
+# reach ECR is this runner.
+#
+# The output that matters is the digest. Nothing downstream refers to a tag.
+
+name: app image
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Immutable tag for this build. The repository refuses to move one, so reuse of a tag fails the push.
+        required: true
+        type: string
+
+concurrency:
+  group: genai-app-image
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: eu-central-1
+  TF_VERSION: "1.14.8"
+  TF_EKS: controls/terraform/eks-platform
+
+jobs:
+  image:
+    name: build and push
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # The deploy role's trust policy pins environment:production in the OIDC
+    # subject; without this block the job cannot assume it.
+    environment:
+      name: production
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-image-${{ github.run_id }}
+
+      # The registry URL comes from applied state, not from a variable someone
+      # has to keep in sync with the account the cluster actually runs in.
+      - name: read the registry from applied state
+        id: registry
+        run: |
+          set -euo pipefail
+          ./.github/scripts/tf-config.sh "$TF_EKS" eks-platform
+          terraform -chdir="$TF_EKS" init -input=false -no-color >/dev/null
+          url="$(terraform -chdir="$TF_EKS" output -raw mediation_repository_url)"
+          if [ -z "$url" ]; then
+            echo "eks-platform state holds no registry; apply the platform layer first" >&2
+            exit 1
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          TF_STATE_REGION: ${{ vars.TF_STATE_REGION }}
+
+      - name: log in to ECR
+        run: |
+          set -euo pipefail
+          aws ecr get-login-password --region "$AWS_REGION" \
+            | docker login --username AWS --password-stdin "${{ steps.registry.outputs.url }}"
+
+      - name: build
+        run: docker build -t "${{ steps.registry.outputs.url }}:${{ inputs.tag }}" app/
+
+      - name: push
+        id: push
+        run: |
+          set -euo pipefail
+          docker push "${{ steps.registry.outputs.url }}:${{ inputs.tag }}"
+          digest="$(docker inspect --format='{{index .RepoDigests 0}}' \
+            "${{ steps.registry.outputs.url }}:${{ inputs.tag }}" | cut -d@ -f2)"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: report the digest
+        run: |
+          {
+            echo "### Image published"
+            echo
+            echo "Repository: \`${{ steps.registry.outputs.url }}\`"
+            echo "Tag: \`${{ inputs.tag }}\`"
+            echo "Digest: \`${{ steps.push.outputs.digest }}\`"
+            echo
+            echo "Render the manifests with it:"
+            echo
+            echo '```bash'
+            echo "IMAGE_DIGEST=${{ steps.push.outputs.digest }} controls/kubernetes/render.sh"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

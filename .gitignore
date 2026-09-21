@@ -38,3 +38,10 @@ controls/terraform/*/backend.tf
 # its backend is a real committed file.
 !controls/terraform/pipeline-iam/backend.tf
 terraform.tfvars
+
+# Built React bundle and its toolchain; the image build produces both.
+app/web/node_modules/
+app/web/dist/
+
+# Manifests rendered against applied state; regenerate with controls/kubernetes/render.sh.
+.rendered/

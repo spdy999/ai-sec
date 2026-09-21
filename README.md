@@ -22,12 +22,13 @@ make ci     # the gate chain the pipeline enforces
 
 ```
 controls/terraform/
-  eks-platform/       root: where code runs   - VPC, EKS, nodes, endpoints
+  eks-platform/       root: where code runs   - VPC, EKS, nodes, endpoints, jump host, registry
   bedrock-ai/         root: what code does    - Bedrock, guardrail, corpus, vectors, identity
-  modules/            twelve reusable modules, each with its own README
+  modules/            thirteen reusable modules, each with its own README
   fixtures/insecure/  deliberately broken config the gate must reject
-controls/policy/      71 Rego rules, applied to Terraform plans AND Kubernetes YAML
+controls/policy/      76 Rego rules, applied to Terraform plans AND Kubernetes YAML
 controls/kubernetes/  base manifests, Kyverno policies, and manifests that must be refused
+app/                  the only custom code: the mediation service and its React front-end
 .github/workflows/    the CI gate chain, mirroring make ci
 ```
 
@@ -43,10 +44,10 @@ it accepts good input.
 
 | Claim | Proof | Command |
 |---|---|---|
-| Both layers satisfy every rule | 71 rules, 0 violations | `make policy` |
-| The gate refuses insecure infrastructure | 53 violations found in the fixture | `make policy-negative` |
+| Both layers satisfy every rule | 76 rules, 0 violations | `make policy` |
+| The gate refuses insecure infrastructure | 60 violations found in the fixture | `make policy-negative` |
 | The gate refuses insecure workloads | 29 violations found in `bad/` | `make policy-k8s-negative` |
-| No rule is decorative | 67 of 71 rules proven to fire; 4 exempt, each named | `make policy-coverage` |
+| No rule is decorative | 72 of 76 rules proven to fire; 4 exempt, each named | `make policy-coverage` |
 | A real cluster enforces admission | four manifests refused by the API server | `make k8s-demo` |
 | Default-deny egress actually blocks | a packet sent before and after the policy | `make netpol-proof` |
 

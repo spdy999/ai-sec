@@ -202,6 +202,20 @@ module "nodes" {
   capacity_type = var.node_capacity_type
 }
 
+# Immutable tags, scan on push, CMK-encrypted layers, pull restricted to the
+# node role. There is no route to Docker Hub from this VPC, so this is the only
+# registry the cluster can pull from at all.
+module "registry" {
+  source = "../modules/container-registry"
+
+  name_prefix     = var.name_prefix
+  environment     = var.environment
+  repository_name = "mediation"
+
+  kms_key_arn         = module.encryption.arn
+  pull_principal_arns = [module.nodes.node_role_arn]
+}
+
 # Free, and the difference between a three dollar demo and a four figure
 # invoice. Also the earliest signal that a stolen workload identity is being
 # used to spend money on model tokens.

@@ -32,3 +32,18 @@ output "mediation_log_group_name" {
   description = "Log group the SIEM forwarder subscribes to."
   value       = module.logging.mediation_log_group_name
 }
+
+output "vector_index_name" {
+  description = "Index the ingester writes and the service reads."
+  value       = var.index_name
+}
+
+output "embedding_model_id" {
+  description = "Embedding model, for the ingester and the query path."
+  value       = var.embedding_model_id
+}
+
+output "chat_model_id" {
+  description = "Answering model."
+  value       = var.chat_model_id
+}

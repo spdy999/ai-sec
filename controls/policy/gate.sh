@@ -3,7 +3,7 @@
 # Presentation layer over conftest.
 #
 # conftest reports one "test" per rule per document, so a directory of nine
-# manifests against seventy-one rules reads as "630 tests" — a number that means
+# manifests against seventy-six rules reads as "630 tests" — a number that means
 # nothing to anyone watching. These wrappers report what the gate actually
 # decided: how many rules exist, how many documents they read, and what failed.
 #

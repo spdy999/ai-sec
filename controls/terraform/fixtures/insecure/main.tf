@@ -377,3 +377,25 @@ resource "aws_instance" "public_bastion" {
 
   associate_public_ip_address = true
 }
+
+# VIOLATION 30: a registry that undoes every downstream image control. Tags can
+# be moved after review, nothing is scanned on the way in, and the layers are
+# encrypted under a key nobody here can audit or revoke.
+resource "aws_ecr_repository" "insecure" {
+  name                 = "genai-insecure-mediation"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = false
+  }
+
+  encryption_configuration {
+    encryption_type = "AES256"
+  }
+}
+
+# VIOLATION 31: the absent half. No scanning block and no encryption block at
+# all, which is a different failure from declaring them wrongly.
+resource "aws_ecr_repository" "no_configuration" {
+  name = "genai-insecure-bare"
+}

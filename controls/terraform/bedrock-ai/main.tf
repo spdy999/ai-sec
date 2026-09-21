@@ -143,3 +143,110 @@ module "workload_identity" {
   telemetry_log_group_arn = module.logging.mediation_log_group_arn
   kms_key_arn             = module.encryption.arn
 }
+
+########################################
+# Vector store access
+#
+# `aoss:APIAccessAll` in IAM is necessary and not sufficient. OpenSearch
+# Serverless refuses every request that is not also granted by a data access
+# policy, so an IAM-only grant returns 403 on the first query and nothing in the
+# IAM policy explains why.
+#
+# The split matters more than the mechanics. The service that answers questions
+# can read the index and nothing else; only the jump host can create or write
+# one. A prompt injection that reaches the retrieval path therefore cannot
+# poison the corpus, because the identity running it has no write permission to
+# poison it with.
+########################################
+
+resource "aws_opensearchserverless_access_policy" "vectors" {
+  name = "${var.name_prefix}-vectors-${var.environment}"
+  type = "data"
+
+  policy = jsonencode([
+    {
+      Description = "The mediation service reads the corpus index"
+      Rules = [
+        {
+          ResourceType = "index"
+          Resource     = ["index/${module.vector_store.collection_name}/${var.index_name}"]
+          Permission   = ["aoss:ReadDocument", "aoss:DescribeIndex"]
+        },
+      ]
+      Principal = [module.workload_identity.role_arn]
+    },
+    {
+      Description = "The operator jump host builds and refreshes it"
+      Rules = [
+        {
+          ResourceType = "index"
+          Resource     = ["index/${module.vector_store.collection_name}/${var.index_name}"]
+          Permission = [
+            "aoss:CreateIndex",
+            "aoss:DeleteIndex",
+            "aoss:UpdateIndex",
+            "aoss:DescribeIndex",
+            "aoss:ReadDocument",
+            "aoss:WriteDocument",
+          ]
+        },
+        {
+          ResourceType = "collection"
+          Resource     = ["collection/${module.vector_store.collection_name}"]
+          Permission   = ["aoss:CreateCollectionItems", "aoss:DescribeCollectionItems"]
+        },
+      ]
+      Principal = [var.ingestion_role_arn]
+    },
+  ])
+}
+
+########################################
+# Ingestion permissions
+#
+# Attached to the jump host role rather than baked into the platform layer,
+# because these are permissions over resources this layer owns: the corpus
+# bucket, the embedding model, the collection and the key.
+########################################
+
+resource "aws_iam_policy" "ingestion" {
+  name   = "${var.name_prefix}-${var.environment}-ingestion"
+  policy = data.aws_iam_policy_document.ingestion.json
+}
+
+resource "aws_iam_role_policy_attachment" "ingestion" {
+  role       = var.ingestion_role_name
+  policy_arn = aws_iam_policy.ingestion.arn
+}
+
+data "aws_iam_policy_document" "ingestion" {
+  statement {
+    sid       = "ReadTheCorpus"
+    effect    = "Allow"
+    actions   = ["s3:GetObject", "s3:ListBucket"]
+    resources = [module.rag_documents.arn, "${module.rag_documents.arn}/*"]
+  }
+
+  # Embeddings only. The ingester has no reason to reach a text model, and the
+  # condition means it cannot invoke one even by accident.
+  statement {
+    sid       = "EmbedWithTheApprovedEmbeddingModel"
+    effect    = "Allow"
+    actions   = ["bedrock:InvokeModel"]
+    resources = ["arn:aws:bedrock:${var.region}::foundation-model/${var.embedding_model_id}"]
+  }
+
+  statement {
+    sid       = "WriteVectors"
+    effect    = "Allow"
+    actions   = ["aoss:APIAccessAll"]
+    resources = [module.vector_store.arn]
+  }
+
+  statement {
+    sid       = "UseDataKey"
+    effect    = "Allow"
+    actions   = ["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"]
+    resources = [module.encryption.arn]
+  }
+}

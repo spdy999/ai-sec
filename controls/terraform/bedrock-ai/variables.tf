@@ -112,3 +112,33 @@ variable "corpus_source_dir" {
   type        = string
   default     = "../../data/corpus"
 }
+
+variable "ingestion_role_arn" {
+  description = "Principal permitted to write vectors. The jump host role, wired from the platform layer: indexing the corpus is an operator action, so the running service can never write to the vector store and a prompt injection cannot poison it. Synthetic default so the layer plans offline."
+  type        = string
+  default     = "arn:aws:iam::000000000000:role/genai-assistant-prod-bastion"
+}
+
+variable "ingestion_role_name" {
+  description = "Name of the same role. Terraform attaches a policy by name, and only the ARN crosses the layer boundary otherwise."
+  type        = string
+  default     = "genai-assistant-prod-bastion"
+}
+
+variable "index_name" {
+  description = "OpenSearch index holding the corpus embeddings."
+  type        = string
+  default     = "genai-corpus"
+}
+
+variable "embedding_model_id" {
+  description = "Model that turns documents and questions into vectors. Must appear in approved_model_ids; the policy gate checks the list, not this variable."
+  type        = string
+  default     = "amazon.titan-embed-text-v2:0"
+}
+
+variable "chat_model_id" {
+  description = "Model that answers. Must appear in approved_model_ids."
+  type        = string
+  default     = "anthropic.claude-sonnet-4-5-20250929-v1:0"
+}

@@ -199,6 +199,56 @@ data "aws_iam_policy_document" "deploy_infrastructure" {
     }
   }
 
+  # Creating the repository is Terraform's job and is covered above by
+  # ec2/eks-style wildcards being absent here on purpose: ECR is split in two.
+  # GetAuthorizationToken has no resource of its own -- it mints the docker
+  # login for the whole registry -- so it can only be granted on "*". Everything
+  # that acts on images is scoped to the platform's own repositories.
+  statement {
+    sid       = "EcrLogin"
+    effect    = "Allow"
+    actions   = ["ecr:GetAuthorizationToken"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "EcrOwnRepositoriesOnly"
+    effect = "Allow"
+
+    actions = [
+      "ecr:CreateRepository",
+      "ecr:DeleteRepository",
+      "ecr:DescribeRepositories",
+      "ecr:TagResource",
+      "ecr:UntagResource",
+      "ecr:ListTagsForResource",
+      "ecr:PutImageTagMutability",
+      "ecr:PutImageScanningConfiguration",
+      "ecr:GetLifecyclePolicy",
+      "ecr:PutLifecyclePolicy",
+      "ecr:DeleteLifecyclePolicy",
+      "ecr:GetRepositoryPolicy",
+      "ecr:SetRepositoryPolicy",
+      "ecr:DeleteRepositoryPolicy",
+
+      # The image build pushes with these.
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:InitiateLayerUpload",
+      "ecr:UploadLayerPart",
+      "ecr:CompleteLayerUpload",
+      "ecr:PutImage",
+      "ecr:BatchGetImage",
+      "ecr:DescribeImages",
+      "ecr:GetDownloadUrlForLayer",
+    ]
+
+    resources = ["arn:aws:ecr:*:${var.account_id}:repository/${var.name_prefix}*"]
+  }
+
+  # OpenSearch Serverless data access policies are a separate API from the
+  # collection itself, and `aoss:*` in the Infrastructure statement above covers
+  # both. Named here only so the next reader does not go looking for a gap.
+
   # The AI layer creates the RAG corpus bucket. Scoped to the platform's own
   # name prefix, so the role cannot touch the state bucket's neighbours or any
   # unrelated bucket in the account.

@@ -25,7 +25,7 @@ implementation inside an already-approved shape does not need re-approval.
 make demo             # the presentation walkthrough: pass, then fail, then verdict
 make ci               # the gate chain the pipeline enforces
 make plan             # render both Terraform layers to plan.json, offline
-make policy           # both secure layers must pass all 71 rules
+make policy           # both secure layers must pass all 76 rules
 make policy-negative  # the insecure fixture must FAIL; a clean run is itself a failure
 make policy-k8s       # workload manifests must pass
 make policy-k8s-negative  # the bad manifests must FAIL
@@ -36,7 +36,7 @@ make validate         # terraform validate both roots (runs init first)
 make clean            # remove generated plan artefacts
 ```
 
-Running one area rather than all seventy-one rules. There is no per-rule runner,
+Running one area rather than all seventy-six rules. There is no per-rule runner,
 and `conftest --namespace` is a trap here: every rule file is `package main`,
 so `--namespace eks` matches nothing and reports zero failures rather than an
 error. Filter on the message prefix instead:
@@ -48,8 +48,8 @@ conftest test --policy controls/policy --all-namespaces -o json \
 ```
 
 Dropping the `grep` and piping to `cut -d: -f1 | sort | uniq -c` maps the whole
-fixture by area — 21 eks, 7 encryption, 6 model governance, 5 network, 5
-logging, 5 iam, 3 cost, 2 residency.
+fixture by area — 21 eks, 7 encryption, 6 supply chain, 6 model governance,
+5 network, 5 logging, 5 iam, 3 cost, 2 residency.
 
 Live cluster targets, which need podman running:
 
@@ -72,15 +72,19 @@ Requires `terraform`, `conftest`, and for the live targets `kind` (0.33+),
 controls/terraform/
   eks-platform/       root: where code runs   - VPC, EKS, nodes, endpoints, jump host
   bedrock-ai/         root: what code does    - Bedrock, guardrail, corpus, vectors, identity
-  modules/            twelve reusable modules, each with its own README
+  modules/            thirteen reusable modules, each with its own README
   fixtures/insecure/  deliberately broken config the gate must reject
   pipeline-iam/       root: run by hand - OIDC provider and the role Actions assumes
-controls/policy/      71 Rego rules, applied to Terraform plans AND Kubernetes YAML
-controls/kubernetes/  base manifests, Kyverno policies, and manifests that must be refused
+controls/policy/      76 Rego rules, applied to Terraform plans AND Kubernetes YAML
+controls/kubernetes/  base manifests, Kyverno policies, manifests that must be refused,
+                      and render.sh which substitutes applied state into them
+app/                  the only custom code: mediation service (FastAPI) and its
+                      React front-end, bundled into one image
 .github/workflows/    security.yml (gate chain, mirrors make ci); tf-reusable-workflow.yaml
                       (reusable: the only place terraform runs); infra-provision,
                       infra-destroy, infra-eks-platform, infra-bedrock-ai
-                      (dispatch-only callers, OIDC, no stored keys)
+                      (dispatch-only callers, OIDC, no stored keys); app-image.yml
+                      builds and pushes the mediation image
 .github/scripts/      backend + tfvars generation and cross-root wiring for deploy
 docs/RUNBOOK.md       operational how-to: prereqs, offline loop, live cluster,
                       real AWS apply/destroy order, demo, troubleshooting
@@ -137,6 +141,20 @@ therefore `map(string)` keyed by a static name — `nodes`, `bastion`,
 `operator-0` — with the unknown value on the right. A `toset()` of ARNs plans
 fine right up until the first entry comes from another resource, then fails
 with "Invalid for_each argument" and nothing else changed.
+
+**The service can read the vector index and never write it.** The OpenSearch
+data access policy grants writes to the jump host role only, so ingestion is an
+operator action. That is what makes corpus poisoning by prompt injection
+impossible rather than merely unlikely — the identity running the injection has
+no write permission to use. `aoss:APIAccessAll` in IAM is necessary and not
+sufficient: without a data access policy every query returns 403 and the IAM
+policy looks correct.
+
+**The image is built on a GitHub runner, never on the jump host.** The jump host
+has no route to the internet, so it cannot pull a base image or an npm package.
+`app-image.yml` is the only thing that can reach both the public registries and
+ECR. Its output is a digest; nothing downstream refers to a tag, and the
+repository refuses to move one.
 
 **The jump host is the only way into the VPC, and it has no ingress rules.**
 There is no internet gateway, no public subnet and no SSH. Access is Session
@@ -197,7 +215,7 @@ plans twice and print the same four lines twice. `$(PLAN_EKS)` and friends
 rebuild only when their `.tf` sources are newer.
 
 **Screen output goes through `controls/policy/gate.sh`.** conftest reports one
-"test" per rule per document, so nine manifests against seventy-one rules reads as
+"test" per rule per document, so nine manifests against seventy-six rules reads as
 "630 tests" — a number that means nothing on a projector. The wrapper reports
 rules, documents and violations, and truncates negative output to `SHOW`
 examples plus a count (the demo sets `SHOW=5`; CI leaves it unset for a full
@@ -247,6 +265,12 @@ provider, and cannot delete the state bucket it stores its own state in (the
 bucket shares the `genai-assistant-` prefix, so the S3 grant would otherwise
 reach it). Tightening the remaining wildcards after a first apply belongs in
 the risk assessment.
+
+**The demo application is written and has never run.** `app/` holds the
+mediation service and its React front-end; `controls/kubernetes/base/` holds the
+manifests, now with a ConfigMap, a Service and an operator port-forward network
+policy. None of it has been built, pushed or applied, because nothing is
+provisioned. The sequence is `docs/RUNBOOK.md` section 4c.
 
 Outstanding: the five-page design summary and the top-5 risk assessment.
 
