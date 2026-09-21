@@ -121,3 +121,9 @@ variable "bastion_instance_type" {
   type        = string
   default     = "t3.micro"
 }
+
+variable "existing_anomaly_monitor_arn" {
+  description = "Dimensional SERVICE anomaly monitor to reuse. An account holds at most one, and AWS creates a default the first time Cost Explorer is opened. Resolved by the deploy job; empty means create one."
+  type        = string
+  default     = ""
+}

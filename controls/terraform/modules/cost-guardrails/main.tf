@@ -33,17 +33,32 @@ resource "aws_budgets_budget" "platform" {
 # is a monitor type of its own, and it watches every service rather than a
 # named list, which is what is wanted here anyway: the alarming case is spend
 # appearing somewhere nobody thought to list.
+#
+# An account may hold exactly one of these, and AWS creates a default one the
+# first time Cost Explorer is opened, so a second is refused with "Limit
+# exceeded on dimensional spend monitor creation". The deploy job looks for the
+# existing monitor and passes its ARN; this creates one only where there is
+# none.
 resource "aws_ce_anomaly_monitor" "services" {
+  count = var.existing_anomaly_monitor_arn == "" ? 1 : 0
+
   name              = "${var.name_prefix}-${var.environment}-services"
   monitor_type      = "DIMENSIONAL"
   monitor_dimension = "SERVICE"
+}
+
+locals {
+  anomaly_monitor_arn = coalesce(
+    var.existing_anomaly_monitor_arn,
+    try(aws_ce_anomaly_monitor.services[0].arn, ""),
+  )
 }
 
 resource "aws_ce_anomaly_subscription" "services" {
   name      = "${var.name_prefix}-${var.environment}-anomalies"
   frequency = "DAILY"
 
-  monitor_arn_list = [aws_ce_anomaly_monitor.services.arn]
+  monitor_arn_list = [local.anomaly_monitor_arn]
 
   threshold_expression {
     dimension {

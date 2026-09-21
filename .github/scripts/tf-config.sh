@@ -68,6 +68,19 @@ fi
 # source in one line, and that line would make `terraform plan` require AWS
 # credentials, which is the one thing this repository will not do. Resolving it
 # here keeps the roots free of data sources that call AWS.
+# An account holds at most one dimensional SERVICE anomaly monitor, and AWS
+# creates a default one the first time Cost Explorer is opened. Creating a
+# second fails with "Limit exceeded on dimensional spend monitor creation", so
+# the existing one is reused where there is one.
+if [ "${key}" = "eks-platform" ]; then
+  monitor="$(aws ce get-anomaly-monitors \
+    --query "AnomalyMonitors[?MonitorType=='DIMENSIONAL' && MonitorDimension=='SERVICE'] | [0].MonitorArn" \
+    --output text 2>/dev/null || echo None)"
+  if [ "${monitor}" != "None" ] && [ -n "${monitor}" ]; then
+    echo "existing_anomaly_monitor_arn = \"${monitor}\"" >> "${dir}/ci.auto.tfvars"
+  fi
+fi
+
 if [ "${key}" = "eks-platform" ]; then
   ami="$(aws ssm get-parameter \
     --region "${region}" \

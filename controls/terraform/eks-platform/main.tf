@@ -226,4 +226,6 @@ module "cost_guardrails" {
   environment        = var.environment
   monthly_budget_usd = var.monthly_budget_usd
   alert_emails       = var.cost_alert_emails
+
+  existing_anomaly_monitor_arn = var.existing_anomaly_monitor_arn
 }

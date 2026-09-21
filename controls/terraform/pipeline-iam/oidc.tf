@@ -323,18 +323,11 @@ data "aws_iam_policy_document" "deploy_infrastructure" {
     sid    = "ServiceLinkedRolesForNamedServicesOnly"
     effect = "Allow"
 
-    # CreateNodegroup reads the service-linked role before creating it, and
-    # reports the missing read as "Failed to validate if SLR ... already exists",
-    # which reads like a validation bug rather than a permissions one.
-    actions   = ["iam:CreateServiceLinkedRole", "iam:GetRole"]
+    actions   = ["iam:CreateServiceLinkedRole"]
     resources = ["arn:aws:iam::${var.account_id}:role/aws-service-role/*"]
 
-    # Only CreateServiceLinkedRole carries iam:AWSServiceName. Applying the
-    # condition to the whole statement would deny the GetRole above, because a
-    # request with no such key never satisfies StringEquals. The resource path
-    # is what scopes the read.
     condition {
-      test     = "StringEqualsIfExists"
+      test     = "StringEquals"
       variable = "iam:AWSServiceName"
 
       values = [
@@ -344,6 +337,28 @@ data "aws_iam_policy_document" "deploy_infrastructure" {
         "observability.aoss.amazonaws.com",
       ]
     }
+  }
+
+  # CreateNodegroup checks whether the service-linked role already exists before
+  # creating it, and reports the missing read as
+  #
+  #   InvalidRequestException: Failed to validate if SLR:
+  #   AWSServiceRoleForAmazonEKSNodegroup already exists due to missing
+  #   permissions for 'iam:GetRole'
+  #
+  # which reads like a validation bug rather than a permissions one.
+  #
+  # Its own statement, with no condition. Folding it into the statement above
+  # fails even with StringEqualsIfExists: `iam:simulate-principal-policy` allows
+  # it, and the real call is still refused, so the request carries an
+  # iam:AWSServiceName that does not match. A read restricted to the
+  # service-linked role path is a narrow enough grant to stop guessing which
+  # value that is.
+  statement {
+    sid       = "ReadServiceLinkedRoles"
+    effect    = "Allow"
+    actions   = ["iam:GetRole"]
+    resources = ["arn:aws:iam::${var.account_id}:role/aws-service-role/*"]
   }
 
   # The state bucket shares the name prefix, so the grant above reaches it.
