@@ -27,3 +27,9 @@ variable "region" {
   description = "Region the trail lives in. Used to build the trail ARN the bucket policy pins, so the bucket cannot receive another account's or another region's logs."
   type        = string
 }
+
+variable "force_destroy_trail_bucket" {
+  description = "Let terraform destroy delete the trail bucket with its object versions still in it. False everywhere a real audit trail is kept; true only for an ephemeral demo environment that exists to be torn down."
+  type        = bool
+  default     = false
+}

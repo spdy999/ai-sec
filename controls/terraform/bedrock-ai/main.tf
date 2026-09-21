@@ -57,6 +57,8 @@ module "logging" {
   region             = var.region
   kms_key_arn        = module.encryption.arn
   log_retention_days = var.log_retention_days
+
+  force_destroy_trail_bucket = var.ephemeral_environment
 }
 
 # Private connectivity to Bedrock. The endpoint policy repeats the model

@@ -7,15 +7,11 @@ the vector store logged the read, and any bug between those two points leaks it.
 
 import json
 
-from . import aws, config
+from . import config, providers
 
 
 def embed(text: str) -> list[float]:
-    response = aws.bedrock.invoke_model(
-        modelId=config.EMBEDDING_MODEL_ID,
-        body=json.dumps({"inputText": text}),
-    )
-    return json.loads(response["body"].read())["embedding"]
+    return providers.embed(text)
 
 
 def search(question: str, groups: frozenset[str], top_k: int | None = None) -> list[dict]:
@@ -25,7 +21,7 @@ def search(question: str, groups: frozenset[str], top_k: int | None = None) -> l
     runs inside the kNN query, so a passage the caller cannot see is never a
     candidate in the first place.
     """
-    client = aws.opensearch_client()
+    client = providers.vector_client()
 
     query = {
         "size": top_k or config.TOP_K,
