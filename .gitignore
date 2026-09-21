@@ -1,8 +1,11 @@
 # macOS
 .DS_Store
 
-# Claude Code
-.claude/
+# Claude Code. Local settings stay local; the repo-scoped skills are shared,
+# so the directory itself must be unignored - git does not descend into an
+# ignored directory, and a bare !.claude/skills/ would never be reached.
+.claude/*
+!.claude/skills/
 
 # Terraform
 .terraform/

@@ -28,14 +28,35 @@ make plan             # render both Terraform layers to plan.json, offline
 make policy           # both secure layers must pass all 70 rules
 make policy-negative  # the insecure fixture must FAIL; a clean run is itself a failure
 make policy-k8s       # workload manifests must pass
+make policy-k8s-negative  # the bad manifests must FAIL
 make policy-coverage  # every rule must fire against a fixture
+make plan-insecure    # render the insecure fixture on its own
+make fmt              # terraform fmt -check, recursive
+make validate         # terraform validate both roots (runs init first)
 make clean            # remove generated plan artefacts
 ```
+
+Running one area rather than all seventy rules. There is no per-rule runner,
+and `conftest --namespace` is a trap here: every rule file is `package main`,
+so `--namespace eks` matches nothing and reports zero failures rather than an
+error. Filter on the message prefix instead:
+
+```bash
+conftest test --policy controls/policy --all-namespaces -o json \
+  controls/terraform/fixtures/insecure/plan.json \
+  | jq -r '.[].failures[]?.msg' | grep '^eks:'
+```
+
+Dropping the `grep` and piping to `cut -d: -f1 | sort | uniq -c` maps the whole
+fixture by area — 20 eks, 7 encryption, 6 model governance, 5 network, 5
+logging, 5 iam, 3 cost, 2 residency.
 
 Live cluster targets, which need podman running:
 
 ```bash
 make kind-up          # create the local cluster
+make k8s-apply        # base manifests + Kyverno only
+make k8s-admit        # throw the bad manifests at a real API server
 make k8s-demo         # a real cluster refuses each insecure manifest
 make netpol-proof     # send a packet before and after default-deny egress
 make kind-down
@@ -61,6 +82,7 @@ controls/kubernetes/  base manifests, Kyverno policies, and manifests that must 
 .github/scripts/      backend + tfvars generation and cross-root wiring for deploy
 docs/RUNBOOK.md       operational how-to: prereqs, offline loop, live cluster,
                       real AWS apply/destroy order, demo, troubleshooting
+.claude/skills/ship/  repo-local skill: make ci, commit, push, watch the run
 ```
 
 Every control is validated by proving it rejects bad input, never only that it
@@ -168,6 +190,19 @@ entries, CMK envelope encryption of etcd, control plane audit logs reaching
 CloudWatch). `docs/RUNBOOK.md` is written: operational (how to run things);
 README stays the reviewer-facing what/why/proof doc — don't duplicate content
 between them.
+
+**The deployment pipeline exists but has never run.** `deploy.yml` and
+`destroy.yml` are written, dispatch-only and gate-chained; nothing has been
+applied from them. Before a first deploy: apply `controls/terraform/bootstrap`
+by hand, set the `TF_STATE_BUCKET` and `AWS_DEPLOY_ROLE_ARN` Actions variables
+from its outputs, and create an Actions environment named `production` — the
+OIDC trust policy pins it. None of that is done yet.
+
+**The deploy role's infrastructure policy is service-scoped, not
+resource-scoped** (`ec2:*`, `eks:*`, ...), because the ARNs it would name do
+not exist until the first apply. It is already denied from editing its own
+trust policy or the OIDC provider. Tightening it after a first apply belongs in
+the risk assessment.
 
 Outstanding: the five-page design summary and the top-5 risk assessment.
 
