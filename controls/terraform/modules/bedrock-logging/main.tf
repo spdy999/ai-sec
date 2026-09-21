@@ -209,16 +209,19 @@ data "aws_iam_policy_document" "trail_bucket" {
 
     # Scoped to this trail, so another account's trail cannot be pointed at this
     # bucket to poison or pad the log store.
+    #
+    # AWS documents this statement with a second condition on
+    # s3:x-amz-acl = bucket-owner-full-control. Do not add it. Buckets created
+    # today default to ObjectOwnership = BucketOwnerEnforced, which disables
+    # ACLs, so CloudTrail sends no x-amz-acl header and the condition can never
+    # match. The grant then silently does not apply and CreateTrail fails with
+    # InsufficientEncryptionPolicyException -- an error that names the bucket
+    # and the KMS key and says nothing about ACLs. aws:SourceArn is what scopes
+    # this; the ACL condition only ever mattered when ACLs existed.
     condition {
       test     = "StringEquals"
       variable = "aws:SourceArn"
       values   = ["arn:aws:cloudtrail:${var.region}:${var.account_id}:trail/${var.name_prefix}-${var.environment}-bedrock"]
-    }
-
-    condition {
-      test     = "StringEquals"
-      variable = "s3:x-amz-acl"
-      values   = ["bucket-owner-full-control"]
     }
   }
 }
