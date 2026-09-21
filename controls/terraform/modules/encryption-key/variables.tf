@@ -35,3 +35,9 @@ variable "deletion_window_in_days" {
   type        = number
   default     = 30
 }
+
+variable "autoscaling_ebs_access" {
+  description = "Let the Auto Scaling service-linked role use this key for EBS volumes. Required by any node group whose root volumes are encrypted with a customer-managed key; without it nodes launch and are terminated with Client.InvalidKMSKey.InvalidState."
+  type        = bool
+  default     = false
+}

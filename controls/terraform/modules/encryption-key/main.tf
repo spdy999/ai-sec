@@ -62,6 +62,66 @@ data "aws_iam_policy_document" "key" {
     }
   }
 
+  # EBS volumes encrypted with a customer-managed key are attached by Auto
+  # Scaling on our behalf, and Auto Scaling acts as its own service-linked role
+  # rather than as the caller. Without this the node launches and is killed
+  # within a minute:
+  #
+  #   Client.InvalidKMSKey.InvalidState: The KMS key provided is in an
+  #   incorrect state
+  #
+  # which names the key rather than the missing permission, and repeats forever
+  # because the group simply launches another node. The node group reports no
+  # health issue throughout, because no node ever lived long enough to register.
+  dynamic "statement" {
+    for_each = var.autoscaling_ebs_access ? [1] : []
+
+    content {
+      sid    = "AllowAutoScalingToUseTheKeyForVolumes"
+      effect = "Allow"
+
+      actions = [
+        "kms:Encrypt",
+        "kms:Decrypt",
+        "kms:ReEncrypt*",
+        "kms:GenerateDataKey*",
+        "kms:DescribeKey",
+      ]
+
+      resources = ["*"]
+
+      principals {
+        type        = "AWS"
+        identifiers = ["arn:aws:iam::${var.account_id}:role/aws-service-role/autoscaling.amazonaws.com/AWSServiceRoleForAutoScaling"]
+      }
+    }
+  }
+
+  # Separate because of the condition. CreateGrant is what actually lets the
+  # attached volume be decrypted at boot, and the condition confines it to
+  # grants Auto Scaling creates for AWS resources rather than arbitrary ones.
+  dynamic "statement" {
+    for_each = var.autoscaling_ebs_access ? [1] : []
+
+    content {
+      sid       = "AllowAutoScalingToGrantForVolumesOnly"
+      effect    = "Allow"
+      actions   = ["kms:CreateGrant"]
+      resources = ["*"]
+
+      principals {
+        type        = "AWS"
+        identifiers = ["arn:aws:iam::${var.account_id}:role/aws-service-role/autoscaling.amazonaws.com/AWSServiceRoleForAutoScaling"]
+      }
+
+      condition {
+        test     = "Bool"
+        variable = "kms:GrantIsForAWSResource"
+        values   = ["true"]
+      }
+    }
+  }
+
   dynamic "statement" {
     for_each = length(var.service_principals) > 0 ? [1] : []
 

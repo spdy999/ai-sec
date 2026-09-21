@@ -21,6 +21,10 @@ module "encryption" {
 
   # EKS uses the key to envelope-encrypt Kubernetes Secrets.
   service_principals = ["eks.amazonaws.com"]
+
+  # Auto Scaling attaches the nodes' encrypted root volumes, acting as its own
+  # service-linked role rather than as whoever ran apply.
+  autoscaling_ebs_access = true
 }
 
 # A VPC with no internet gateway, no NAT gateway and no default route.
