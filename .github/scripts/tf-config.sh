@@ -98,6 +98,16 @@ if [ "${key}" = "eks-platform" ]; then
   fi
 fi
 
+# The S3 gateway endpoint is reached by route, so the node security group needs
+# a prefix list egress rule for it. The ID is regional and not guessable.
+if [ "${key}" = "eks-platform" ]; then
+  prefix_list="$(aws ec2 describe-prefix-lists \
+    --region "${region}" \
+    --filters "Name=prefix-list-name,Values=com.amazonaws.${region}.s3" \
+    --query "PrefixLists[0].PrefixListId" --output text)"
+  echo "s3_prefix_list_id = \"${prefix_list}\"" >> "${dir}/ci.auto.tfvars"
+fi
+
 if [ "${key}" = "eks-platform" ]; then
   ami="$(aws ssm get-parameter \
     --region "${region}" \

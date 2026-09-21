@@ -145,6 +145,24 @@ resource "aws_vpc_security_group_egress_rule" "nodes_to_endpoints" {
   ip_protocol                  = "tcp"
 }
 
+# The S3 gateway endpoint is a route, not an ENI, so traffic to it leaves the
+# node as ordinary traffic addressed to S3 and has to be allowed by a prefix
+# list rule. Nothing in the interface endpoint rules covers it.
+#
+# Without this the node boots, the kubelet starts, and the node never becomes
+# Ready: ECR serves image layers out of S3, so the VPC CNI and kube-proxy images
+# never arrive. The node group stays in CREATING for twenty minutes with no
+# health issue, and the node itself looks healthy the whole time.
+resource "aws_vpc_security_group_egress_rule" "nodes_to_s3" {
+  security_group_id = module.eks.node_security_group_id
+  description       = "HTTPS to S3 through the gateway endpoint, for ECR image layers"
+
+  prefix_list_id = var.s3_prefix_list_id
+  from_port      = 443
+  to_port        = 443
+  ip_protocol    = "tcp"
+}
+
 resource "aws_vpc_security_group_egress_rule" "bastion_to_endpoints" {
   security_group_id = module.bastion.security_group_id
   description       = "HTTPS to the SSM interface endpoints"

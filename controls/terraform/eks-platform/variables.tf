@@ -127,3 +127,9 @@ variable "existing_anomaly_monitor_arn" {
   type        = string
   default     = ""
 }
+
+variable "s3_prefix_list_id" {
+  description = "Managed prefix list for S3 in this region. Passed in rather than read through an aws_ec2_managed_prefix_list data source, which would contact AWS during plan. The deploy job resolves it; the default is synthetic."
+  type        = string
+  default     = "pl-00000000"
+}
