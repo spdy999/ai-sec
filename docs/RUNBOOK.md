@@ -87,9 +87,20 @@ terraform init && terraform apply
 ```
 
 Then, in the repository: set `TF_STATE_BUCKET` and `AWS_DEPLOY_ROLE_ARN` (and
-optionally `COST_ALERT_EMAIL`) as Actions **variables**, and create an Actions
-**environment** named `production`. See `controls/terraform/pipeline-iam/README.md`
-— the environment name is load-bearing, the OIDC trust policy pins it.
+optionally `COST_ALERT_EMAIL` and `CLUSTER_ADMIN_ARNS`) as Actions
+**variables**, and create an Actions **environment** named `production`. See
+`controls/terraform/pipeline-iam/README.md` — the environment name is
+load-bearing, the OIDC trust policy pins it.
+
+`CLUSTER_ADMIN_ARNS` is a comma-separated list of IAM principals granted EKS
+cluster admin, for example
+`arn:aws:iam::<account>:user/<you>`. The cluster is created with
+`bootstrap_cluster_creator_admin_permissions` off, so nobody inherits admin
+from having run the apply. Leave the variable unset and no human can read the
+cluster: `kubectl` returns `error: You must be logged in to the server
+(Unauthorized)` and the EKS console shows **Unauthorized** in place of the Pods
+and Nodes counts. The principal has to be the one you actually sign in as — an
+entry for a user does not cover a role you assume, or the reverse.
 
 After that:
 

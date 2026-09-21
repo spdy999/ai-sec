@@ -64,6 +64,23 @@ if [ "${key}" = "eks-platform" ] && [ -n "${COST_ALERT_EMAIL:-}" ]; then
   echo "cost_alert_emails = [\"${COST_ALERT_EMAIL}\"]" >> "${dir}/ci.auto.tfvars"
 fi
 
+# Cluster admin is granted to named principals and inherited by nobody: the
+# cluster sets bootstrap_cluster_creator_admin_permissions to false, so the
+# deploy role does not become an administrator by virtue of having run apply.
+# The consequence is that a human with no access entry gets "Unauthorized" in
+# the EKS console against Pods and Nodes, because the console calls the
+# Kubernetes API as the signed-in principal rather than as the cluster owner.
+# Comma-separated so one repository variable can carry several operators.
+if [ "${key}" = "eks-platform" ] && [ -n "${CLUSTER_ADMIN_ARNS:-}" ]; then
+  arns="$(printf '%s' "${CLUSTER_ADMIN_ARNS}" \
+    | tr ',' '\n' \
+    | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
+    | grep -v '^$' \
+    | sed 's/.*/"&"/' \
+    | paste -sd, -)"
+  echo "cluster_admin_principal_arns = [${arns}]" >> "${dir}/ci.auto.tfvars"
+fi
+
 # The jump host AMI. Terraform could read this from an aws_ssm_parameter data
 # source in one line, and that line would make `terraform plan` require AWS
 # credentials, which is the one thing this repository will not do. Resolving it

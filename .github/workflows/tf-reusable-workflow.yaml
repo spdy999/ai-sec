@@ -99,6 +99,7 @@ jobs:
           TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
           TF_STATE_REGION: ${{ vars.TF_STATE_REGION }}
           COST_ALERT_EMAIL: ${{ vars.COST_ALERT_EMAIL }}
+          CLUSTER_ADMIN_ARNS: ${{ vars.CLUSTER_ADMIN_ARNS }}
 
       # The AI layer's inputs are the platform layer's outputs, read from
       # applied state rather than passed between jobs, so there is one source of
@@ -112,6 +113,8 @@ jobs:
         env:
           TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
           TF_STATE_REGION: ${{ vars.TF_STATE_REGION }}
+          COST_ALERT_EMAIL: ${{ vars.COST_ALERT_EMAIL }}
+          CLUSTER_ADMIN_ARNS: ${{ vars.CLUSTER_ADMIN_ARNS }}
 
       - name: init
         run: terraform -chdir="$TF_DIR" init -input=false -no-color
