@@ -93,3 +93,28 @@ data "aws_iam_policy_document" "bucket" {
     }
   }
 }
+
+# The corpus itself.
+#
+# Every document is synthetic and lives in the repository, so what the
+# retrieval path is tested against is reviewable rather than whatever someone
+# happened to upload by hand. Three of them exist to be refused: one carries
+# invented PII, one carries a prompt-injection payload, one baits a denied
+# topic.
+resource "aws_s3_object" "document" {
+  # README.md describes the corpus; it is not part of it. Uploading it would
+  # put a document about the test fixtures into the retrieval path.
+  for_each = var.document_source_dir == "" ? toset([]) : setsubtract(
+    fileset("${path.root}/${var.document_source_dir}", "*.md"),
+    ["README.md"],
+  )
+
+  bucket = aws_s3_bucket.this.id
+  key    = "corpus/${each.value}"
+  source = "${path.root}/${var.document_source_dir}/${each.value}"
+  etag   = filemd5("${path.root}/${var.document_source_dir}/${each.value}")
+
+  # Inherits the bucket's CMK default. Stated explicitly so a future change to
+  # the bucket default cannot silently downgrade the objects.
+  server_side_encryption = "aws:kms"
+}

@@ -28,6 +28,8 @@ module "rag_documents" {
   name_prefix = var.name_prefix
   environment = var.environment
   kms_key_arn = module.encryption.arn
+
+  document_source_dir = var.corpus_source_dir
 }
 
 # Server-side prompt-attack filtering, PII masking and denied topics. Enforced

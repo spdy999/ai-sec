@@ -18,3 +18,9 @@ variable "noncurrent_version_expiration_days" {
   type        = number
   default     = 90
 }
+
+variable "document_source_dir" {
+  description = "Path, relative to the root module, of the synthetic corpus to upload. Empty uploads nothing."
+  type        = string
+  default     = ""
+}

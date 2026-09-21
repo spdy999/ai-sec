@@ -106,3 +106,9 @@ variable "vector_store_standby_replicas" {
   type        = string
   default     = "DISABLED"
 }
+
+variable "corpus_source_dir" {
+  description = "Synthetic corpus uploaded into the RAG bucket, relative to this root. Empty uploads nothing."
+  type        = string
+  default     = "../../data/corpus"
+}
