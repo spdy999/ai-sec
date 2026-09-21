@@ -1,0 +1,41 @@
+# Temporary: print the OIDC subject this repository actually issues.
+#
+# The trust policy pins a subject; if the token carries a different one the
+# error is "Not authorized to perform sts:AssumeRoleWithWebIdentity", which does
+# not say what the subject was. This prints the claims that decide it.
+#
+# Only the claims are printed, never the token: the token is a credential.
+
+name: oidc claims
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  from-a-reusable-workflow:
+    uses: ./.github/workflows/oidc-claims-reusable.yaml
+    permissions:
+      contents: read
+      id-token: write
+
+  direct-with-environment:
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: claims
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const token = await core.getIDToken('sts.amazonaws.com');
+            const claims = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+            core.info('direct job, environment declared on the job itself');
+            core.info(`sub              = ${claims.sub}`);
+            core.info(`aud              = ${claims.aud}`);
+            core.info(`job_workflow_ref = ${claims.job_workflow_ref}`);
