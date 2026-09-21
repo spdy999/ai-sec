@@ -12,3 +12,9 @@ github_repository = "ai-sec"
 # already has one, set these two instead of creating a second.
 # create_oidc_provider       = false
 # existing_oidc_provider_arn = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
+
+# gh api users/<owner> --jq .id
+github_owner_id = "000000000"
+
+# gh api repos/<owner>/<repo> --jq .id
+github_repository_id = "0000000000"

@@ -68,3 +68,13 @@ variable "deploy_role_name" {
   type        = string
   default     = "genai-assistant-gh-pipeline-role"
 }
+
+variable "github_owner_id" {
+  description = "Numeric account ID of the owner, from `gh api users/<owner> --jq .id`. Part of the immutable OIDC subject, which embeds IDs so renaming an account cannot transfer trust."
+  type        = string
+}
+
+variable "github_repository_id" {
+  description = "Numeric repository ID, from `gh api repos/<owner>/<repo> --jq .id`. Same reason."
+  type        = string
+}

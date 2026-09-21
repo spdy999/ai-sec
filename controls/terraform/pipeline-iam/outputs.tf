@@ -16,7 +16,7 @@ output "state_kms_key_arn" {
   value       = try(local.state_kms_key_arns[0], "")
 }
 
-output "trusted_github_subject" {
-  description = "The only OIDC subject permitted to assume the deploy role."
-  value       = local.github_subject
+output "trusted_github_subjects" {
+  description = "The OIDC subjects permitted to assume the deploy role. Two, because GitHub issues both a legacy and an ID-qualified immutable form and which one arrives is not ours to choose."
+  value       = [local.github_subject, local.github_subject_immutable]
 }

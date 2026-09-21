@@ -25,12 +25,31 @@ resource "aws_iam_openid_connect_provider" "github" {
 locals {
   oidc_provider_arn = var.create_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : var.existing_oidc_provider_arn
 
-  # repo:owner/name:environment:production
+  # GitHub issues two shapes of subject, and which one arrives is not something
+  # this repository controls:
   #
-  # Pinning the environment and not only the branch is what stops a new job in
-  # this same repository from assuming the role by accident: a job without
-  # `environment: production` receives a token with a different subject.
+  #   repo:owner/name:environment:production                     (legacy)
+  #   repo:owner@<owner id>/name@<repo id>:environment:production (immutable)
+  #
+  # The immutable form embeds the numeric account and repository IDs so that
+  # renaming either cannot silently transfer trust to a different repository.
+  # Pinning only the legacy form fails with "Not authorized to perform
+  # sts:AssumeRoleWithWebIdentity" and no indication of what the subject was.
+  #
+  # Both are listed. Values in a StringEquals condition are OR-ed, so this is
+  # still two exact matches and not a wildcard: pinning the environment rather
+  # than only the branch is what stops another job in this same repository
+  # assuming the role by accident.
   github_subject = "repo:${var.github_owner}/${var.github_repository}:environment:${var.github_environment}"
+
+  github_subject_immutable = format(
+    "repo:%s@%s/%s@%s:environment:%s",
+    var.github_owner,
+    var.github_owner_id,
+    var.github_repository,
+    var.github_repository_id,
+    var.github_environment,
+  )
 }
 
 data "aws_iam_policy_document" "deploy_trust" {
@@ -54,7 +73,11 @@ data "aws_iam_policy_document" "deploy_trust" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = [local.github_subject]
+
+      values = [
+        local.github_subject,
+        local.github_subject_immutable,
+      ]
     }
   }
 }

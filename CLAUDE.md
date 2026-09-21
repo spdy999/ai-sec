@@ -127,6 +127,18 @@ person's own credentials, not the role it creates, so there is no circularity,
 only an ordering requirement that the bucket exists first. Its `backend.tf` is
 the one committed backend file; `.gitignore` carries an explicit exception.
 
+**GitHub issues an ID-qualified OIDC subject.** The token's `sub` is
+`repo:spdy999@24741707/ai-sec@1376188734:environment:production`, not
+`repo:spdy999/ai-sec:environment:production`. The immutable form embeds numeric
+account and repository IDs so a rename cannot transfer trust. Pinning only the
+legacy form fails with `Not authorized to perform sts:AssumeRoleWithWebIdentity`
+and no hint about what the subject actually was — the way to find out is to
+decode the claims in a throwaway job, not to guess. `pipeline-iam` now trusts
+both forms; values in a `StringEquals` condition are OR-ed, so it stays two
+exact matches rather than becoming a wildcard. The shape is identical whether
+the token is requested from a caller job or from inside a called reusable
+workflow, so the reusable workflow is not involved in this.
+
 **`environment: production` gates nothing on this plan.** Required-reviewer
 protection rules need a paid plan on a private repo. The real gate is that
 deploy and destroy are dispatch-only, plus a typed `confirm=destroy` on the
