@@ -181,6 +181,21 @@ data "aws_iam_policy_document" "deploy_infrastructure" {
     }
   }
 
+  # The AI layer creates the RAG corpus bucket. Scoped to the platform's own
+  # name prefix, so the role cannot touch the state bucket's neighbours or any
+  # unrelated bucket in the account.
+  statement {
+    sid    = "RagCorpusBucket"
+    effect = "Allow"
+
+    actions = ["s3:*"]
+
+    resources = [
+      "arn:aws:s3:::${var.name_prefix}-*",
+      "arn:aws:s3:::${var.name_prefix}-*/*",
+    ]
+  }
+
   # The cluster gets its own OIDC provider for IRSA - modules/eks-cluster
   # creates one. A blanket deny on OpenIDConnectProvider actions would break
   # the deploy, so the deny below names this role's provider instead.
@@ -216,6 +231,25 @@ data "aws_iam_policy_document" "deploy_infrastructure" {
         "observability.aoss.amazonaws.com",
       ]
     }
+  }
+
+  # The state bucket shares the name prefix, so the grant above reaches it.
+  # The role must read and write state objects there, but it must not be able
+  # to delete the bucket it stores its own state in, or unpick its protections.
+  statement {
+    sid    = "ProtectTheStateBucketItself"
+    effect = "Deny"
+
+    actions = [
+      "s3:DeleteBucket",
+      "s3:PutBucketPolicy",
+      "s3:DeleteBucketPolicy",
+      "s3:PutBucketVersioning",
+      "s3:PutEncryptionConfiguration",
+      "s3:PutBucketPublicAccessBlock",
+    ]
+
+    resources = ["arn:aws:s3:::${var.state_bucket_name}"]
   }
 
   # A deploy role that can rewrite its own trust policy is not a boundary.
