@@ -1,0 +1,157 @@
+# Teardown of the GenAI platform.
+#
+# This exists because the expensive half of a deployment pipeline is the half
+# that removes things. The stack costs roughly $16/day, about 71% of it
+# OpenSearch Serverless, and a forgotten demo environment is the single most
+# likely way this assignment turns into a bill.
+#
+# Two safety properties:
+#
+#   1. It refuses to run unless a human types the word "destroy" into the
+#      dispatch form. Unlike the apply side, which is protected by a gate chain
+#      that has to pass first, a destroy has nothing to fail. The typed word is
+#      the only thing standing between a misclick and a deleted cluster.
+#   2. It shares a concurrency group with deploy.yml, so it cannot start while
+#      an apply is in flight.
+
+name: destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "destroy" to confirm. Anything else aborts.'
+        required: true
+        default: ""
+
+concurrency:
+  group: genai-platform-live
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  TF_VERSION: "1.14.8"
+  AWS_REGION: eu-central-1
+  TF_EKS: controls/terraform/eks-platform
+  TF_BEDROCK: controls/terraform/bedrock-ai
+
+jobs:
+  # Cheap, credential-free, and it fails before anything can assume a role.
+  confirm:
+    name: confirm intent
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: check the typed confirmation
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.confirm }}" != "destroy" ]; then
+            echo "confirmation was '${{ inputs.confirm }}', expected 'destroy'; aborting"
+            exit 1
+          fi
+          echo "confirmed"
+
+  # ---------------------------------------------------------------------------
+  # Reverse of the apply order. The AI layer holds the IRSA role that trusts the
+  # cluster's OIDC provider, so it goes first: destroying the cluster underneath
+  # it would leave a role trusting an issuer that no longer exists.
+  # ---------------------------------------------------------------------------
+  ai:
+    name: destroy bedrock-ai
+    runs-on: ubuntu-latest
+    needs: [confirm]
+    timeout-minutes: 30
+
+    environment:
+      name: production
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-destroy-${{ github.run_id }}
+
+      - name: write backend and variables
+        run: |
+          set -euo pipefail
+          ./.github/scripts/tf-config.sh "$TF_EKS" eks-platform
+          ./.github/scripts/tf-config.sh "$TF_BEDROCK" bedrock-ai
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+
+      # The platform layer is still up at this point, so its outputs still
+      # resolve. Terraform needs the same variable values to destroy a resource
+      # that it needed to create one.
+      - name: wire the AI layer to the platform layer
+        run: ./.github/scripts/tf-wire.sh
+        env:
+          TF_EKS: ${{ env.TF_EKS }}
+          TF_BEDROCK: ${{ env.TF_BEDROCK }}
+
+      - name: destroy
+        run: |
+          set -euo pipefail
+          terraform -chdir="$TF_BEDROCK" init -input=false -no-color
+          terraform -chdir="$TF_BEDROCK" destroy -input=false -no-color -auto-approve \
+            -var-file=ci.auto.tfvars -var-file=platform.auto.tfvars
+
+  platform:
+    name: destroy eks-platform
+    runs-on: ubuntu-latest
+    needs: [ai]
+    timeout-minutes: 45
+
+    environment:
+      name: production
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-destroy-${{ github.run_id }}
+
+      - name: write backend and variables
+        run: ./.github/scripts/tf-config.sh "$TF_EKS" eks-platform
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          COST_ALERT_EMAIL: ${{ vars.COST_ALERT_EMAIL }}
+
+      - name: destroy
+        run: |
+          set -euo pipefail
+          terraform -chdir="$TF_EKS" init -input=false -no-color
+          terraform -chdir="$TF_EKS" destroy -input=false -no-color -auto-approve \
+            -var-file=ci.auto.tfvars
+
+      # The bootstrap root is not touched: the state bucket, the CMK and the
+      # deploy role survive a teardown, because the next deployment needs them.
+      - name: what remains
+        run: |
+          echo "both layers destroyed"
+          echo "the state bucket, its CMK and the deploy role remain, by design"

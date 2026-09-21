@@ -26,3 +26,9 @@ __pycache__/
 aws-env.sh
 
 .obsidian/
+
+# Generated at deploy time by .github/scripts/tf-config.sh. The backend is not
+# committed because declaring one makes the offline `terraform plan` refuse to
+# run, which would break `make ci`.
+controls/terraform/*/backend.tf
+terraform.tfvars

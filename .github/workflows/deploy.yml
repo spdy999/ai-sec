@@ -1,0 +1,186 @@
+# Deployment of the GenAI platform to a real AWS account.
+#
+# Three properties this workflow is built around:
+#
+#   1. It cannot start on its own. There is no push or pull_request trigger.
+#      A human dispatches it, from main, on purpose.
+#   2. It re-runs the full security gate chain before it authenticates. The
+#      gate job holds no AWS credentials; the apply jobs hold no untrusted
+#      input. Nothing that touches AWS runs until `make ci` has passed.
+#   3. The two layers apply in dependency order, and the AI layer reads the
+#      platform layer's real outputs rather than a hand-copied tfvars file.
+#
+# Cost: roughly $16/day while it is up, about 71% of that OpenSearch
+# Serverless. Run destroy.yml when the session ends.
+
+name: deploy
+
+on:
+  workflow_dispatch:
+
+# Never cancel a running apply. A cancelled Terraform leaves a held state lock
+# and half-created infrastructure, which is worse than a slow queue. destroy.yml
+# names the same group, so an apply and a destroy cannot overlap.
+concurrency:
+  group: genai-platform-live
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  TF_VERSION: "1.14.8"
+  CONFTEST_VERSION: "0.56.0"
+  AWS_REGION: eu-central-1
+  TF_EKS: controls/terraform/eks-platform
+  TF_BEDROCK: controls/terraform/bedrock-ai
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # The same gates the pipeline enforces on every commit. Re-run here because
+  # a dispatch can name any commit on main, including one whose gate run
+  # predates a policy change.
+  # ---------------------------------------------------------------------------
+  gate:
+    name: security gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: install conftest
+        run: |
+          set -euo pipefail
+          curl -sSL -o conftest.tar.gz \
+            "https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz"
+          tar xzf conftest.tar.gz conftest
+          sudo mv conftest /usr/local/bin/
+
+      - name: full gate chain
+        run: make ci
+
+  # ---------------------------------------------------------------------------
+  # Layer 1: where code runs. VPC, cluster, nodes, endpoints.
+  # ---------------------------------------------------------------------------
+  platform:
+    name: apply eks-platform
+    runs-on: ubuntu-latest
+    needs: [gate]
+    timeout-minutes: 45
+
+    # On a private repository on a free plan this environment enforces nothing:
+    # required reviewers are a paid protection rule. It is declared anyway for
+    # two reasons - it starts gating the moment the plan changes, and the OIDC
+    # trust policy pins `environment:production` in the token subject, so a job
+    # that drops this block cannot assume the role at all.
+    environment:
+      name: production
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      # Short-lived credentials, issued to this repository and environment only.
+      # There is no long-lived access key in this repository.
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-deploy-${{ github.run_id }}
+
+      - name: write backend and variables
+        run: ./.github/scripts/tf-config.sh "$TF_EKS" eks-platform
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          COST_ALERT_EMAIL: ${{ vars.COST_ALERT_EMAIL }}
+
+      - name: plan
+        run: |
+          set -euo pipefail
+          terraform -chdir="$TF_EKS" init -input=false -no-color
+          terraform -chdir="$TF_EKS" plan -input=false -no-color \
+            -var-file=ci.auto.tfvars -out=tf.plan
+
+      # Applying the saved plan file, not re-planning. What was reviewed in the
+      # log above is exactly what is applied; nothing is re-resolved in between.
+      - name: apply
+        run: terraform -chdir="$TF_EKS" apply -input=false -no-color tf.plan
+
+  # ---------------------------------------------------------------------------
+  # Layer 2: what code does. Bedrock, guardrail, corpus, vectors, identity.
+  #
+  # Its inputs are the platform layer's outputs. They are read from the applied
+  # state here rather than passed between jobs, so there is one source of truth
+  # and no chance of applying the AI layer against a stale VPC id.
+  # ---------------------------------------------------------------------------
+  ai:
+    name: apply bedrock-ai
+    runs-on: ubuntu-latest
+    needs: [platform]
+    timeout-minutes: 30
+
+    environment:
+      name: production
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-deploy-${{ github.run_id }}
+
+      - name: write backend and variables
+        run: |
+          set -euo pipefail
+          ./.github/scripts/tf-config.sh "$TF_EKS" eks-platform
+          ./.github/scripts/tf-config.sh "$TF_BEDROCK" bedrock-ai
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          COST_ALERT_EMAIL: ${{ vars.COST_ALERT_EMAIL }}
+
+      - name: wire the AI layer to the applied platform layer
+        run: ./.github/scripts/tf-wire.sh
+        env:
+          TF_EKS: ${{ env.TF_EKS }}
+          TF_BEDROCK: ${{ env.TF_BEDROCK }}
+
+      - name: plan
+        run: |
+          set -euo pipefail
+          terraform -chdir="$TF_BEDROCK" init -input=false -no-color
+          terraform -chdir="$TF_BEDROCK" plan -input=false -no-color \
+            -var-file=ci.auto.tfvars -var-file=platform.auto.tfvars -out=tf.plan
+
+      - name: apply
+        run: terraform -chdir="$TF_BEDROCK" apply -input=false -no-color tf.plan
+
+      - name: what is now running, and what it costs
+        run: |
+          echo "both layers applied in ${AWS_REGION}"
+          echo "this stack costs roughly \$16/day while it is up"
+          echo "run the destroy workflow when the session ends"

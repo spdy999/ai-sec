@@ -53,9 +53,12 @@ controls/terraform/
   bedrock-ai/         root: what code does    - Bedrock, guardrail, corpus, vectors, identity
   modules/            eleven reusable modules, each with its own README
   fixtures/insecure/  deliberately broken config the gate must reject
+  bootstrap/          root: run once by hand - state bucket, OIDC provider, deploy role
 controls/policy/      70 Rego rules, applied to Terraform plans AND Kubernetes YAML
 controls/kubernetes/  base manifests, Kyverno policies, and manifests that must be refused
-.github/workflows/    the CI gate chain, mirroring make ci
+.github/workflows/    security.yml (gate chain, mirrors make ci), deploy.yml,
+                      destroy.yml (both dispatch-only, OIDC, no stored keys)
+.github/scripts/      backend + tfvars generation and cross-root wiring for deploy
 docs/RUNBOOK.md       operational how-to: prereqs, offline loop, live cluster,
                       real AWS apply/destroy order, demo, troubleshooting
 ```
@@ -68,8 +71,23 @@ accepts good input.
 **This deploys for real, not just offline.** The user decided against staying
 $0/offline-only. `terraform apply` runs against a real AWS account in
 `eu-central-1`, tuned to roughly $16/day (71% of it OpenSearch Serverless).
-The Makefile has no `apply`/`destroy` target yet — don't add live-deploy
-targets without asking. Always `terraform destroy` after a live session.
+The Makefile still has no `apply`/`destroy` target — don't add live-deploy
+targets without asking. Deployment is `deploy.yml` / `destroy.yml`, both
+dispatch-only. Always tear down after a live session.
+
+**The S3 backend is generated at deploy time, never committed.** Declaring a
+`backend "s3"` block in either root makes `terraform plan` refuse to run
+without initialising it, which breaks `make ci` and the whole offline claim.
+`.github/scripts/tf-config.sh` writes `backend.tf` and `ci.auto.tfvars` inside
+the deploy job; both are gitignored. State is in S3 for deployments and
+nowhere for gates.
+
+**`environment: production` gates nothing on this plan.** Required-reviewer
+protection rules need a paid plan on a private repo. The real gate is that
+deploy and destroy are dispatch-only, plus a typed `confirm=destroy` on the
+teardown. The environment block stays because the OIDC trust policy pins
+`environment:production` in the token subject — a job without it cannot assume
+the role.
 
 **Offline plan needs mock credentials.** The AWS provider resolves credentials
 during `plan` even with every `skip_*` flag set. `providers.tf` passes
