@@ -1,4 +1,4 @@
-# bootstrap
+# pipeline-iam
 
 The one root that runs from a laptop, once, before the pipeline exists.
 
@@ -18,7 +18,7 @@ change, so losing the state file costs a `terraform import`, not an outage.
 ## Running it
 
 ```bash
-cd controls/terraform/bootstrap
+cd controls/terraform/pipeline-iam
 cp terraform.tfvars.example terraform.tfvars   # fill in bucket name and repo
 terraform init
 terraform apply                                 # needs admin credentials, once

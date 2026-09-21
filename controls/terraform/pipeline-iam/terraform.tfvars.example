@@ -1,4 +1,4 @@
-# Copy to terraform.tfvars and fill in before the one-time bootstrap apply.
+# Copy to terraform.tfvars and fill in before the one-time apply.
 #
 # This root runs from a laptop with admin credentials, once. Everything after
 # it runs from the pipeline with the role this root creates.

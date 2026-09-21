@@ -39,3 +39,32 @@ variable "existing_oidc_provider_arn" {
   type        = string
   default     = ""
 }
+
+variable "create_state_bucket" {
+  description = "Create the state bucket, its CMK and its policies. Set false when the bucket already exists."
+  type        = bool
+  default     = true
+}
+
+variable "state_kms_key_arn" {
+  description = "CMK encrypting a pre-existing state bucket, if it has one. Only read when create_state_bucket is false."
+  type        = string
+  default     = ""
+}
+
+variable "account_id" {
+  description = "AWS account the role and providers live in."
+  type        = string
+}
+
+variable "name_prefix" {
+  description = "Prefix on the roles and policies Terraform creates. Must match the roots' name_prefix."
+  type        = string
+  default     = "genai-assistant"
+}
+
+variable "deploy_role_name" {
+  description = "Name of the role GitHub Actions assumes."
+  type        = string
+  default     = "genai-assistant-gh-pipeline-role"
+}

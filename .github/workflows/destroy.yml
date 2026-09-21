@@ -92,6 +92,7 @@ jobs:
           ./.github/scripts/tf-config.sh "$TF_BEDROCK" bedrock-ai
         env:
           TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          TF_STATE_REGION: ${{ vars.TF_STATE_REGION }}
 
       # The platform layer is still up at this point, so its outputs still
       # resolve. Terraform needs the same variable values to destroy a resource
@@ -140,6 +141,7 @@ jobs:
         run: ./.github/scripts/tf-config.sh "$TF_EKS" eks-platform
         env:
           TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          TF_STATE_REGION: ${{ vars.TF_STATE_REGION }}
           COST_ALERT_EMAIL: ${{ vars.COST_ALERT_EMAIL }}
 
       - name: destroy
@@ -149,7 +151,7 @@ jobs:
           terraform -chdir="$TF_EKS" destroy -input=false -no-color -auto-approve \
             -var-file=ci.auto.tfvars
 
-      # The bootstrap root is not touched: the state bucket, the CMK and the
+      # pipeline-iam is not touched: the state bucket, the CMK and the
       # deploy role survive a teardown, because the next deployment needs them.
       - name: what remains
         run: |

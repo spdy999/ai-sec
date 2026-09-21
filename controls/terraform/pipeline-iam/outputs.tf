@@ -3,7 +3,7 @@
 
 output "state_bucket" {
   description = "Set as the TF_STATE_BUCKET repository variable."
-  value       = aws_s3_bucket.state.id
+  value       = var.state_bucket_name
 }
 
 output "deploy_role_arn" {
@@ -12,8 +12,8 @@ output "deploy_role_arn" {
 }
 
 output "state_kms_key_arn" {
-  description = "CMK encrypting the state bucket."
-  value       = aws_kms_key.state.arn
+  description = "CMK encrypting the state bucket, empty when the bucket was created elsewhere."
+  value       = try(local.state_kms_key_arns[0], "")
 }
 
 output "trusted_github_subject" {

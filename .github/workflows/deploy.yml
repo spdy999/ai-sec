@@ -106,6 +106,7 @@ jobs:
         run: ./.github/scripts/tf-config.sh "$TF_EKS" eks-platform
         env:
           TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          TF_STATE_REGION: ${{ vars.TF_STATE_REGION }}
           COST_ALERT_EMAIL: ${{ vars.COST_ALERT_EMAIL }}
 
       - name: plan
@@ -161,6 +162,7 @@ jobs:
           ./.github/scripts/tf-config.sh "$TF_BEDROCK" bedrock-ai
         env:
           TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          TF_STATE_REGION: ${{ vars.TF_STATE_REGION }}
           COST_ALERT_EMAIL: ${{ vars.COST_ALERT_EMAIL }}
 
       - name: wire the AI layer to the applied platform layer

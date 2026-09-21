@@ -34,4 +34,7 @@ aws-env.sh
 # committed because declaring one makes the offline `terraform plan` refuse to
 # run, which would break `make ci`.
 controls/terraform/*/backend.tf
+# pipeline-iam is the exception: it is not part of the offline gate chain, so
+# its backend is a real committed file.
+!controls/terraform/pipeline-iam/backend.tf
 terraform.tfvars

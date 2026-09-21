@@ -74,7 +74,7 @@ controls/terraform/
   bedrock-ai/         root: what code does    - Bedrock, guardrail, corpus, vectors, identity
   modules/            eleven reusable modules, each with its own README
   fixtures/insecure/  deliberately broken config the gate must reject
-  bootstrap/          root: run once by hand - state bucket, OIDC provider, deploy role
+  pipeline-iam/       root: run by hand - OIDC provider and the role Actions assumes
 controls/policy/      70 Rego rules, applied to Terraform plans AND Kubernetes YAML
 controls/kubernetes/  base manifests, Kyverno policies, and manifests that must be refused
 .github/workflows/    security.yml (gate chain, mirrors make ci), deploy.yml,
@@ -195,7 +195,7 @@ between them.
 
 **The deployment pipeline exists but has never run.** `deploy.yml` and
 `destroy.yml` are written, dispatch-only and gate-chained; nothing has been
-applied from them. Before a first deploy: apply `controls/terraform/bootstrap`
+applied from them. Before a first deploy: apply `controls/terraform/pipeline-iam`
 by hand, set the `TF_STATE_BUCKET` and `AWS_DEPLOY_ROLE_ARN` Actions variables
 from its outputs, and create an Actions environment named `production` — the
 OIDC trust policy pins it. None of that is done yet.

@@ -20,9 +20,19 @@ set -euo pipefail
 dir="${1:?usage: tf-config.sh <root directory> <state key prefix>}"
 key="${2:?usage: tf-config.sh <root directory> <state key prefix>}"
 
-: "${TF_STATE_BUCKET:?set the TF_STATE_BUCKET repository variable to the bootstrap output}"
+: "${TF_STATE_BUCKET:?set the TF_STATE_BUCKET repository variable to the state bucket name}"
 
 region="${AWS_REGION:-eu-central-1}"
+
+# The backend's `bucket` is a name, not an ARN, and the two are easy to confuse
+# when copying out of the console. Accept either and normalise, rather than
+# failing later inside `terraform init` with a message that does not say why.
+bucket="${TF_STATE_BUCKET#arn:aws:s3:::}"
+
+# The backend's `region` must be the bucket's own region, which is not
+# necessarily where the infrastructure is deployed. Override only when they
+# differ.
+state_region="${TF_STATE_REGION:-${region}}"
 
 # The account id is read from the assumed session rather than configured. One
 # less value to keep in sync, and it cannot disagree with the role that is
@@ -35,9 +45,9 @@ account_id="$(aws sts get-caller-identity --query Account --output text)"
 cat > "${dir}/backend.tf" <<EOF
 terraform {
   backend "s3" {
-    bucket       = "${TF_STATE_BUCKET}"
+    bucket       = "${bucket}"
     key          = "${key}/terraform.tfstate"
-    region       = "${region}"
+    region       = "${state_region}"
     encrypt      = true
     use_lockfile = true
   }
@@ -54,4 +64,4 @@ if [ "${key}" = "eks-platform" ] && [ -n "${COST_ALERT_EMAIL:-}" ]; then
   echo "cost_alert_emails = [\"${COST_ALERT_EMAIL}\"]" >> "${dir}/ci.auto.tfvars"
 fi
 
-echo "${dir}: backend -> s3://${TF_STATE_BUCKET}/${key}/terraform.tfstate, account ${account_id}, region ${region}"
+echo "${dir}: backend -> s3://${bucket}/${key}/terraform.tfstate (${state_region}), account ${account_id}, deploying to ${region}"

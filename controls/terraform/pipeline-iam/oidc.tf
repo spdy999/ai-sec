@@ -60,7 +60,7 @@ data "aws_iam_policy_document" "deploy_trust" {
 }
 
 resource "aws_iam_role" "deploy" {
-  name                 = "genai-assistant-github-deploy"
+  name                 = var.deploy_role_name
   description          = "Assumed by GitHub Actions to apply and destroy the GenAI platform"
   assume_role_policy   = data.aws_iam_policy_document.deploy_trust.json
   max_session_duration = 3600
@@ -72,7 +72,7 @@ data "aws_iam_policy_document" "deploy_state" {
   statement {
     effect    = "Allow"
     actions   = ["s3:ListBucket", "s3:GetBucketVersioning"]
-    resources = [aws_s3_bucket.state.arn]
+    resources = [local.state_bucket_arn]
   }
 
   statement {
@@ -86,13 +86,17 @@ data "aws_iam_policy_document" "deploy_state" {
       "s3:DeleteObject",
     ]
 
-    resources = ["${aws_s3_bucket.state.arn}/*"]
+    resources = ["${local.state_bucket_arn}/*"]
   }
 
-  statement {
-    effect    = "Allow"
-    actions   = ["kms:Decrypt", "kms:GenerateDataKey"]
-    resources = [aws_kms_key.state.arn]
+  dynamic "statement" {
+    for_each = local.state_kms_key_arns
+
+    content {
+      effect    = "Allow"
+      actions   = ["kms:Decrypt", "kms:GenerateDataKey"]
+      resources = [statement.value]
+    }
   }
 }
 
@@ -104,14 +108,13 @@ resource "aws_iam_role_policy" "deploy_state" {
 
 # The infrastructure half.
 #
-# Honest description of what this is: service-scoped, not resource-scoped. The
-# two roots create VPCs, clusters, keys and roles whose ARNs do not exist until
-# apply time, so a resource-scoped policy cannot be written ahead of the first
-# apply. The tightening step is to run one apply, then replace these wildcards
-# with the ARNs it produced. That is a deliberate follow-up, not an oversight,
-# and it is called out in the risk assessment.
+# Scoped by service, and by resource wherever the ARN is predictable. It cannot
+# be scoped everywhere: `ec2:*` and `eks:*` act on resources this root has
+# never seen. What it does not do is hold `iam:*` on `*` - that would let the
+# pipeline mint any role in the account, which is the whole boundary.
 data "aws_iam_policy_document" "deploy_infrastructure" {
   statement {
+    sid    = "Infrastructure"
     effect = "Allow"
 
     actions = [
@@ -122,34 +125,119 @@ data "aws_iam_policy_document" "deploy_infrastructure" {
       "bedrock:*",
       "aoss:*",
       "budgets:*",
-      "s3:*",
-      "iam:*",
       "sts:GetCallerIdentity",
     ]
 
     resources = ["*"]
   }
 
-  # A deploy role that can rewrite its own trust policy is not a boundary. The
-  # bootstrap resources are excluded from the role that the pipeline assumes.
+  # Only roles and policies carrying the platform's own name prefix.
   statement {
+    sid    = "IamForPlatformRoles"
+    effect = "Allow"
+
+    actions = [
+      "iam:CreateRole",
+      "iam:DeleteRole",
+      "iam:GetRole",
+      "iam:UpdateRole",
+      "iam:ListRolePolicies",
+      "iam:ListAttachedRolePolicies",
+      "iam:PutRolePolicy",
+      "iam:DeleteRolePolicy",
+      "iam:GetRolePolicy",
+      "iam:AttachRolePolicy",
+      "iam:DetachRolePolicy",
+      "iam:TagRole",
+      "iam:UntagRole",
+      "iam:CreatePolicy",
+      "iam:DeletePolicy",
+      "iam:GetPolicy",
+      "iam:GetPolicyVersion",
+      "iam:CreatePolicyVersion",
+      "iam:DeletePolicyVersion",
+      "iam:ListPolicyVersions",
+      "iam:TagPolicy",
+    ]
+
+    resources = [
+      "arn:aws:iam::${var.account_id}:role/${var.name_prefix}*",
+      "arn:aws:iam::${var.account_id}:policy/${var.name_prefix}*",
+    ]
+  }
+
+  # PassRole is the action that turns "can create a role" into "can become
+  # anything". Conditioned on the service it is being passed to.
+  statement {
+    sid       = "PassOnlyToAwsServices"
+    effect    = "Allow"
+    actions   = ["iam:PassRole"]
+    resources = ["arn:aws:iam::${var.account_id}:role/${var.name_prefix}*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+      values   = ["eks.amazonaws.com", "ec2.amazonaws.com"]
+    }
+  }
+
+  # The cluster gets its own OIDC provider for IRSA - modules/eks-cluster
+  # creates one. A blanket deny on OpenIDConnectProvider actions would break
+  # the deploy, so the deny below names this role's provider instead.
+  statement {
+    sid    = "ClusterOidcProvider"
+    effect = "Allow"
+
+    actions = [
+      "iam:CreateOpenIDConnectProvider",
+      "iam:DeleteOpenIDConnectProvider",
+      "iam:GetOpenIDConnectProvider",
+      "iam:TagOpenIDConnectProvider",
+      "iam:ListOpenIDConnectProviders",
+    ]
+
+    resources = ["*"]
+  }
+
+  statement {
+    sid       = "ServiceLinkedRolesForNamedServicesOnly"
+    effect    = "Allow"
+    actions   = ["iam:CreateServiceLinkedRole"]
+    resources = ["arn:aws:iam::${var.account_id}:role/aws-service-role/*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:AWSServiceName"
+
+      values = [
+        "eks.amazonaws.com",
+        "eks-nodegroup.amazonaws.com",
+        "spot.amazonaws.com",
+        "observability.aoss.amazonaws.com",
+      ]
+    }
+  }
+
+  # A deploy role that can rewrite its own trust policy is not a boundary.
+  # This matters more than it looks: the role name shares the platform prefix,
+  # so the allow above would otherwise cover it. Deny wins over allow.
+  statement {
+    sid    = "ProtectItsOwnIdentity"
     effect = "Deny"
 
     actions = [
-      "iam:DeleteRole",
+      "iam:*OpenIDConnectProvider*",
       "iam:UpdateAssumeRolePolicy",
+      "iam:DeleteRole",
       "iam:PutRolePolicy",
       "iam:DeleteRolePolicy",
       "iam:AttachRolePolicy",
     ]
 
-    resources = [aws_iam_role.deploy.arn]
-  }
-
-  statement {
-    effect    = "Deny"
-    actions   = ["iam:*OpenIDConnectProvider*"]
-    resources = ["*"]
+    resources = [
+      "arn:aws:iam::${var.account_id}:oidc-provider/token.actions.githubusercontent.com",
+      aws_iam_role.deploy.arn,
+    ]
   }
 }
 

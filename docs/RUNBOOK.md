@@ -81,14 +81,14 @@ Roots are separate applies, in order, because `bedrock-ai` takes
 One-time setup, from a laptop with admin credentials:
 
 ```bash
-cd controls/terraform/bootstrap
+cd controls/terraform/pipeline-iam
 cp terraform.tfvars.example terraform.tfvars   # bucket name, GitHub owner/repo
 terraform init && terraform apply
 ```
 
 Then, in the repository: set `TF_STATE_BUCKET` and `AWS_DEPLOY_ROLE_ARN` (and
 optionally `COST_ALERT_EMAIL`) as Actions **variables**, and create an Actions
-**environment** named `production`. See `controls/terraform/bootstrap/README.md`
+**environment** named `production`. See `controls/terraform/pipeline-iam/README.md`
 — the environment name is load-bearing, the OIDC trust policy pins it.
 
 After that:
@@ -139,7 +139,7 @@ terraform -chdir=controls/terraform/bedrock-ai apply \
 
 **Always tear down after a live session** — `destroy.yml`, or
 `terraform destroy` on both roots by hand, bedrock-ai first, then eks-platform.
-Nothing auto-tears-down. The bootstrap root is not part of a teardown: the
+Nothing auto-tears-down. `pipeline-iam` is not part of a teardown: the
 state bucket, its CMK and the deploy role survive, because the next deployment
 needs them.
 
@@ -168,7 +168,7 @@ everything.
 | New rule passes `make policy` but fails `make ci` | `make policy-coverage` requires every rule to fire against a fixture at least once | add/extend a fixture so the rule's message appears in negative output, or add it to the 4-rule exemption list in `controls/policy/coverage.py` with a reason |
 | `deploy.yml` fails at `configure-aws-credentials` with `Not authorized to perform sts:AssumeRoleWithWebIdentity` | the job's OIDC subject doesn't match the role's trust policy | the job must declare `environment: production` — the trust policy pins `repo:<owner>/<repo>:environment:production`, not the branch |
 | An apply fails with the state lock already held | a previous run was cancelled mid-apply | `terraform force-unlock <id>` against the same backend, after confirming no run is live; the workflows set `cancel-in-progress: false` to stop this happening |
-| `tf-wire.sh` exits with `eks-platform state holds no outputs` | the AI layer was dispatched against an empty or wrong state | apply the platform layer first, and check `TF_STATE_BUCKET` points at the bootstrap output |
+| `tf-wire.sh` exits with `eks-platform state holds no outputs` | the AI layer was dispatched against an empty or wrong state | apply the platform layer first, and check `TF_STATE_BUCKET` names the state bucket |
 | An exempt rule shows up in coverage output | one of the "present but misconfigured" halves in `coverage.py` actually fired | remove it from the exemption list — the gate treats this as stale and fails |
 | podman machine won't start | `krunkit` not found | put `/opt/podman/bin` on `PATH` |
 | `kubectl` hits the wrong cluster | forgot `--context kind-koerber-demo` | always pin context by hand; never rely on current-context here |
