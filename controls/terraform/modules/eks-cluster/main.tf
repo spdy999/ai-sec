@@ -115,10 +115,26 @@ module "eks" {
 
   # Declared rather than left to whatever EKS happens to pre-install. A cluster
   # whose CNI version is unmanaged is a cluster nobody can patch deliberately.
+  #
+  # before_compute matters on the networking two. Declaring addons turns off the
+  # self-managed ones EKS would otherwise bootstrap, so without this the node
+  # group is created first and the node comes up with no CNI at all:
+  #
+  #   NetworkReady=false reason:NetworkPluginNotReady
+  #   message:Network plugin returns error: cni plugin not initialized
+  #
+  # and stays NotReady until the node group times out. coredns is left until
+  # after, because it is an ordinary workload that needs a node to land on.
   addons = {
-    coredns    = {}
-    kube-proxy = {}
-    vpc-cni    = {}
+    vpc-cni = {
+      before_compute = true
+    }
+
+    kube-proxy = {
+      before_compute = true
+    }
+
+    coredns = {}
   }
 
   eks_managed_node_groups = {
