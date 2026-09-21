@@ -1,6 +1,11 @@
-output "invocation_log_group_arn" {
-  description = "Log group holding prompt and response text."
-  value       = aws_cloudwatch_log_group.invocations.arn
+output "trail_arn" {
+  description = "CloudTrail recording model invocations and guardrail evaluations."
+  value       = aws_cloudtrail.this.arn
+}
+
+output "trail_log_group_arn" {
+  description = "Log group the trail delivers to, for the SIEM subscription."
+  value       = aws_cloudwatch_log_group.trail.arn
 }
 
 output "mediation_log_group_arn" {

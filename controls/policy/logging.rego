@@ -46,13 +46,36 @@ deny contains msg if {
 	)
 }
 
-# Bedrock must write an invocation audit trail. Without it there is no record of
-# what the model was asked, and no detection source for abuse.
+# Model use must leave a service-side audit trail. Application telemetry is not
+# a substitute: the application is the thing under suspicion, and a compromised
+# one simply stops writing. CloudTrail records InvokeModel as a management event
+# and ApplyGuardrail as a data event on AWS::Bedrock::Guardrail, which covers
+# the guardrail evaluations Bedrock performs during an invocation.
 deny contains msg if {
 	count(lib.typed("aws_bedrock_guardrail")) > 0
-	count(lib.typed("aws_bedrock_model_invocation_logging_configuration")) == 0
+	count(guardrail_audit_trails) == 0
 
-	msg := "logging: Bedrock model invocation logging is not configured, leaving no audit trail"
+	msg := "logging: no CloudTrail records AWS::Bedrock::Guardrail data events, so guardrail verdicts are unauditable"
+}
+
+guardrail_audit_trails contains resource.address if {
+	some resource in lib.typed("aws_cloudtrail")
+	some selector in object.get(resource, ["values", "advanced_event_selector"], [])
+	some field in object.get(selector, "field_selector", [])
+	field.field == "resources.type"
+	"AWS::Bedrock::Guardrail" in object.get(field, "equals", [])
+}
+
+# A trail without digest files records history an attacker can rewrite. Log file
+# validation is what makes a deleted or edited log file detectable.
+deny contains msg if {
+	some resource in lib.typed("aws_cloudtrail")
+	object.get(resource, ["values", "enable_log_file_validation"], false) != true
+
+	msg := sprintf(
+		"logging: %s has log file validation disabled, so tampering with the audit trail leaves no trace",
+		[resource.address],
+	)
 }
 
 deny contains msg if {

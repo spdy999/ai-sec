@@ -25,7 +25,7 @@ implementation inside an already-approved shape does not need re-approval.
 make demo             # the presentation walkthrough: pass, then fail, then verdict
 make ci               # the gate chain the pipeline enforces
 make plan             # render both Terraform layers to plan.json, offline
-make policy           # both secure layers must pass all 76 rules
+make policy           # both secure layers must pass all 77 rules
 make policy-negative  # the insecure fixture must FAIL; a clean run is itself a failure
 make policy-k8s       # workload manifests must pass
 make policy-k8s-negative  # the bad manifests must FAIL
@@ -49,7 +49,7 @@ conftest test --policy controls/policy --all-namespaces -o json \
 
 Dropping the `grep` and piping to `cut -d: -f1 | sort | uniq -c` maps the whole
 fixture by area — 21 eks, 7 encryption, 6 supply chain, 6 model governance,
-5 network, 5 logging, 5 iam, 3 cost, 2 residency.
+6 logging, 5 network, 5 iam, 3 cost, 2 residency.
 
 Live cluster targets, which need podman running:
 
@@ -75,7 +75,7 @@ controls/terraform/
   modules/            twelve reusable modules, each with its own README
   fixtures/insecure/  deliberately broken config the gate must reject
   pipeline-iam/       root: run by hand - OIDC provider and the role Actions assumes
-controls/policy/      76 Rego rules, applied to Terraform plans AND Kubernetes YAML
+controls/policy/      77 Rego rules, applied to Terraform plans AND Kubernetes YAML
 controls/kubernetes/  base manifests, Kyverno policies, manifests that must be refused,
                       and render.sh which substitutes applied state into them
 controls/data/corpus/ six synthetic markdown documents, uploaded by the bedrock-ai
@@ -259,6 +259,22 @@ log).
 
 **Governance lists live in `controls/policy/lib.rego`**, not in the module they
 govern — a team cannot approve a new model by editing its own Terraform.
+
+**The Bedrock audit trail is CloudTrail, not model invocation logging.** AWS
+refuses `PutModelInvocationLoggingConfiguration` on this account with
+`ValidationException: Your account is not authorized to perform this action`
+and a pointer to the support console. It is account-level, not IAM — the same
+call fails with account administrator credentials, which is how to tell the two
+apart. CloudTrail covers it and suits this design better: `InvokeModel` and
+`Converse` are *management* events, on by default; `ApplyGuardrail` is a *data*
+event on `AWS::Bedrock::Guardrail` and includes the evaluations Bedrock runs
+during an invocation, so every block is recorded with the filter that produced
+it. Neither carries prompt text — which removes a contradiction, since the old
+configuration set `text_data_delivery_enabled = true` while
+`app/mediation/telemetry.py` refuses to log prompts for exactly the stated
+reason. What is lost is replay of what was asked. The trail is single-region on
+purpose: a multi-region trail would pull events from outside the EU allow-list
+into this account's log store.
 
 **Bedrock guardrails are configured in Terraform, not reimplemented in code.**
 Custom code exists only for identity-aware authorization. Measuring the

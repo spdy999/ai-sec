@@ -19,6 +19,11 @@ variable "kms_key_arn" {
 }
 
 variable "log_retention_days" {
-  description = "How long prompt and response text is kept. This number is the data minimisation trade-off."
+  description = "How long the audit trail is kept, in both the log group and the trail bucket. No prompt or response text is recorded, so this bounds metadata retention rather than content retention."
   type        = number
+}
+
+variable "region" {
+  description = "Region the trail lives in. Used to build the trail ARN the bucket policy pins, so the bucket cannot receive another account's or another region's logs."
+  type        = string
 }

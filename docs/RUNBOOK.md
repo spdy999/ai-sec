@@ -27,7 +27,7 @@ while editing Terraform or Rego.
 
 ```bash
 make plan             # render both roots to plan.json
-make policy           # both secure layers pass all 76 rules
+make policy           # both secure layers pass all 77 rules
 make policy-negative  # insecure fixture must FAIL (a clean run is a bug)
 make policy-k8s       # workload manifests pass
 make policy-coverage  # every rule fires against a fixture

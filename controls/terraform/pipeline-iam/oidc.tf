@@ -263,6 +263,11 @@ data "aws_iam_policy_document" "deploy_infrastructure" {
         # the model layer applies and the record of what was asked of it does
         # not.
         "bedrock.amazonaws.com",
+
+        # CloudTrail is passed the role it assumes to mirror events into the
+        # CloudWatch log group the SIEM subscribes to. The trail writes to S3
+        # as itself; only the log group delivery needs a role.
+        "cloudtrail.amazonaws.com",
       ]
     }
   }
@@ -330,6 +335,45 @@ data "aws_iam_policy_document" "deploy_infrastructure" {
       "arn:aws:s3:::${var.name_prefix}-*",
       "arn:aws:s3:::${var.name_prefix}-*/*",
     ]
+  }
+
+  # The AI layer's audit trail. Scoped to the platform's own trail name, so the
+  # role cannot stop or delete a trail someone else created -- which is the
+  # first move against an account whose only record of model use is CloudTrail.
+  statement {
+    sid    = "OwnAuditTrailOnly"
+    effect = "Allow"
+
+    actions = [
+      "cloudtrail:CreateTrail",
+      "cloudtrail:DeleteTrail",
+      "cloudtrail:UpdateTrail",
+      "cloudtrail:StartLogging",
+      "cloudtrail:StopLogging",
+      "cloudtrail:GetTrail",
+      "cloudtrail:GetTrailStatus",
+      "cloudtrail:GetEventSelectors",
+      "cloudtrail:PutEventSelectors",
+      "cloudtrail:AddTags",
+      "cloudtrail:RemoveTags",
+      "cloudtrail:ListTags",
+    ]
+
+    resources = ["arn:aws:cloudtrail:*:${var.account_id}:trail/${var.name_prefix}*"]
+  }
+
+  # ListTrails and DescribeTrails enumerate the account and take no resource of
+  # their own. Read-only, and Terraform calls them on every refresh.
+  statement {
+    sid    = "EnumerateTrails"
+    effect = "Allow"
+
+    actions = [
+      "cloudtrail:ListTrails",
+      "cloudtrail:DescribeTrails",
+    ]
+
+    resources = ["*"]
   }
 
   # The cluster gets its own OIDC provider for IRSA - modules/eks-cluster

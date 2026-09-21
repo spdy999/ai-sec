@@ -18,6 +18,10 @@ module "encryption" {
   description = "CMK for ${var.name_prefix} prompts, documents, vectors and logs"
   account_id  = var.account_id
   region      = var.region
+
+  # CloudTrail encrypts its log files with this key. Without the grant the trail
+  # is created and delivers nothing.
+  service_principals = ["cloudtrail.amazonaws.com"]
 }
 
 # The source corpus: private, CMK-encrypted, TLS-only, versioned so a poisoned
@@ -42,13 +46,15 @@ module "guardrail" {
   kms_key_arn = module.encryption.arn
 }
 
-# Every prompt and response, encrypted, with bounded retention.
+# Who invoked which model, and every guardrail verdict — encrypted, tamper
+# evident, with bounded retention. Deliberately no prompt or response text.
 module "logging" {
   source = "../modules/bedrock-logging"
 
   name_prefix        = var.name_prefix
   environment        = var.environment
   account_id         = var.account_id
+  region             = var.region
   kms_key_arn        = module.encryption.arn
   log_retention_days = var.log_retention_days
 }

@@ -399,3 +399,24 @@ resource "aws_ecr_repository" "insecure" {
 resource "aws_ecr_repository" "no_configuration" {
   name = "genai-insecure-bare"
 }
+
+# VIOLATION 32: a trail that exists and proves nothing. It records management
+# events only, so no guardrail verdict is ever captured, and log file validation
+# is off, so anyone who reaches the bucket can rewrite history undetected.
+#
+# Both halves matter. A reviewer seeing "CloudTrail: enabled" in an audit
+# questionnaire would tick the box for either configuration.
+resource "aws_cloudtrail" "toothless" {
+  name                       = "genai-insecure-trail"
+  s3_bucket_name             = aws_s3_bucket.rag_documents.id
+  enable_log_file_validation = false
+
+  advanced_event_selector {
+    name = "Management events only"
+
+    field_selector {
+      field  = "eventCategory"
+      equals = ["Management"]
+    }
+  }
+}
