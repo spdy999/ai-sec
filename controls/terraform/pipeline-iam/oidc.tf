@@ -348,17 +348,28 @@ data "aws_iam_policy_document" "deploy_infrastructure" {
   #
   # which reads like a validation bug rather than a permissions one.
   #
-  # Its own statement, with no condition. Folding it into the statement above
-  # fails even with StringEqualsIfExists: `iam:simulate-principal-policy` allows
-  # it, and the real call is still refused, so the request carries an
-  # iam:AWSServiceName that does not match. A read restricted to the
-  # service-linked role path is a narrow enough grant to stop guessing which
-  # value that is.
+  # Two resources, and the second is the one that matters. The role does not
+  # exist yet at the moment of the check, so IAM has no path to resolve and
+  # authorises against the bare name:
+  #
+  #   arn:aws:iam::<account>:role/AWSServiceRoleForAmazonEKSNodegroup
+  #
+  # not the /aws-service-role/ form the role will have once created. Granting
+  # only the path fails, and `iam:simulate-principal-policy` on the path form
+  # says "allowed", which is how this survives two rounds of looking correct.
+  #
+  # Also its own statement rather than folded into CreateServiceLinkedRole
+  # above: that statement's iam:AWSServiceName condition does not hold for a
+  # read.
   statement {
-    sid       = "ReadServiceLinkedRoles"
-    effect    = "Allow"
-    actions   = ["iam:GetRole"]
-    resources = ["arn:aws:iam::${var.account_id}:role/aws-service-role/*"]
+    sid     = "ReadServiceLinkedRoles"
+    effect  = "Allow"
+    actions = ["iam:GetRole"]
+
+    resources = [
+      "arn:aws:iam::${var.account_id}:role/aws-service-role/*",
+      "arn:aws:iam::${var.account_id}:role/AWSServiceRole*",
+    ]
   }
 
   # The state bucket shares the name prefix, so the grant above reaches it.
