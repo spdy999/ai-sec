@@ -33,7 +33,15 @@ all_containers := array.concat(
 
 workload_name := sprintf("%s/%s", [input.kind, object.get(input.metadata, "name", "unnamed")])
 
-approved_registry_suffix := ".amazonaws.com"
+# Registries this platform is permitted to pull from. ECR in the deployed
+# platform; the local registry beside the kind cluster in the local runtime.
+# Both are private and under the same control as the cluster, which is the
+# property that matters -- an image the organisation did not put there cannot be
+# pulled, whichever runtime is in front of you.
+approved_registry_suffixes := [
+	".amazonaws.com",
+	"localhost:5001",
+]
 
 ########################################
 # Namespace admission
@@ -177,7 +185,9 @@ deny contains msg if {
 deny contains msg if {
 	some container in all_containers
 	registry := image_registry(container.image)
-	not endswith(registry, approved_registry_suffix)
+	every suffix in approved_registry_suffixes {
+		not endswith(registry, suffix)
+	}
 
 	msg := sprintf(
 		"k8s: %s container %q pulls from %q, which is not the organisation registry",
@@ -187,10 +197,25 @@ deny contains msg if {
 
 # An image reference only names a registry when its first segment looks like a
 # host. Anything else resolves to Docker Hub by default.
+#
+# This follows the resolution rule a runtime actually uses: the first path
+# segment is a registry when it contains a dot or a colon, or is exactly
+# "localhost" -- and only when the reference has a path separator at all.
+# Checking for a dot alone was wrong in both directions. It missed
+# "localhost:5001/x", calling a private registry "no registry", and an earlier
+# version that dropped the separator check would have read the tag in
+# "nginx:latest" as a hostname.
 image_registry(image) := first if {
+	contains(image, "/")
 	first := split(image, "/")[0]
-	contains(first, ".")
+	host_like(first)
 }
+
+host_like(segment) if contains(segment, ".")
+
+host_like(segment) if contains(segment, ":")
+
+host_like("localhost")
 
 ########################################
 # Resource governance
@@ -236,14 +261,44 @@ deny contains msg if {
 	)
 }
 
+# Every service account must say which identity it carries. A service account
+# with no binding is a workload running as nobody, which in practice means it
+# either cannot reach anything or is relying on a node role that every other pod
+# shares -- and both of those are found at the worst possible moment.
+#
+# Two annotations satisfy this, because the platform runs in two places.
+#
+#   eks.amazonaws.com/role-arn     IRSA. The cluster's OIDC issuer is federated
+#                                  with IAM, the pod exchanges a projected token
+#                                  for short-lived credentials, and the binding
+#                                  is enforced by AWS.
+#
+#   genai.platform/local-identity  The local runtime, which has no federation to
+#                                  enforce. This one is a declaration: it names
+#                                  the principal the workload authenticates as
+#                                  (an OpenSearch user held in a Secret) so that
+#                                  reviewing the manifest tells you what the pod
+#                                  can reach.
+#
+# The second is genuinely weaker than the first and is recorded as such in the
+# risk assessment. What both rule out is the case this rule exists for: a
+# workload running on the default service account, bound to nothing, documented
+# nowhere.
+service_account_identity_annotations := [
+	"eks.amazonaws.com/role-arn",
+	"genai.platform/local-identity",
+]
+
 deny contains msg if {
 	is_kubernetes
 	input.kind == "ServiceAccount"
 
-	object.get(input, ["metadata", "annotations", "eks.amazonaws.com/role-arn"], "") == ""
+	every annotation in service_account_identity_annotations {
+		object.get(input, ["metadata", "annotations", annotation], "") == ""
+	}
 
 	msg := sprintf(
-		"k8s: service account %s has no IRSA role annotation",
+		"k8s: service account %s declares no workload identity, by IRSA annotation or otherwise",
 		[input.metadata.name],
 	)
 }

@@ -1,0 +1,38 @@
+# The demo cluster.
+#
+# Two things here are not defaults.
+#
+# The containerd mirror points the cluster at a registry running beside it, so
+# images are pulled by digest from a named registry host rather than side-loaded
+# with `kind load`. That is not ceremony: two of the workload policy rules --
+# "names no registry, so it resolves to Docker Hub" and "uses a mutable tag;
+# images must be digest-pinned" -- only mean something if there is a registry to
+# name and a digest to pin. Side-loading would have forced both rules to be
+# switched off for the local runtime, which is a strange way to demonstrate
+# supply chain control.
+#
+# The extraPortMapping exposes the mediation service on the host without a
+# LoadBalancer. The deployed platform reaches it through the jump host and
+# kubectl port-forward; there is no jump host here, and a NodePort is the
+# honest local equivalent rather than pretending an ingress exists.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: koerber-demo
+
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      config_path = "/etc/containerd/certs.d"
+
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      - containerPort: 30443
+        hostPort: 30443
+        protocol: TCP

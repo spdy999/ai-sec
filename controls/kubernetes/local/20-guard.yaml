@@ -1,0 +1,141 @@
+# The guardrail, as a process the mediation service cannot bypass.
+#
+# Under Bedrock the guardrail is applied by the platform and IAM refuses an
+# unguarded invocation. There is no IAM here, so the same property is built out
+# of network policy instead: this deployment is the only thing in the namespace
+# permitted to reach the model, and the mediation pod is not permitted to reach
+# the model at all. See 40-networkpolicy.yaml -- that file is where the control
+# actually lives; this one is just the process.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: genai-guard
+  namespace: genai-platform
+  annotations:
+    genai.platform/local-identity: "guard (no credentials; reaches the model host only)"
+  labels:
+    app.kubernetes.io/name: genai-guard
+    app.kubernetes.io/part-of: koerber-genai-assistant
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: genai-guard
+  namespace: genai-platform
+  labels:
+    app.kubernetes.io/name: genai-guard
+    app.kubernetes.io/part-of: koerber-genai-assistant
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: genai-guard
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: genai-guard
+        app.kubernetes.io/part-of: koerber-genai-assistant
+    spec:
+      serviceAccountName: genai-guard
+      automountServiceAccountToken: false
+
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+        - name: guard
+          image: localhost:5001/genai-mediation@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
+          command: ["uvicorn", "guard.main:app", "--host", "0.0.0.0", "--port", "8080"]
+
+          ports:
+            - name: http
+              containerPort: 8080
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
+
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+
+          env:
+            # The model runs on the operator's machine, reached through the
+            # host gateway. That is the local stand-in for the Bedrock runtime
+            # VPC endpoint, and it is the one address this pod may egress to.
+            - name: OLLAMA_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: genai-local-config
+                  key: ollama_endpoint
+            - name: GUARD_MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: genai-local-config
+                  key: guard_model
+            - name: CHAT_MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: genai-local-config
+                  key: chat_model
+            - name: EMBED_MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: genai-local-config
+                  key: embedding_model
+
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 20
+
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: genai-guard
+  namespace: genai-platform
+  labels:
+    app.kubernetes.io/name: genai-guard
+    app.kubernetes.io/part-of: koerber-genai-assistant
+spec:
+  selector:
+    app.kubernetes.io/name: genai-guard
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

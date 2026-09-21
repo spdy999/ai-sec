@@ -27,6 +27,12 @@ RUN useradd --uid 10001 --create-home --shell /usr/sbin/nologin mediation
 
 COPY --from=deps /install /usr/local
 COPY mediation /app/mediation
+
+# The guard ships in the same image and runs from the same layers. Two images
+# would drift, and the guard is small enough that carrying it costs nothing --
+# the manifests choose which process starts by overriding the entrypoint.
+COPY guard /app/guard
+
 COPY --from=web /web/dist /app/mediation/static
 
 WORKDIR /app

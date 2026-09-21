@@ -41,6 +41,7 @@ NO_AWS := env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN
         policy-k8s policy-k8s-negative policy-coverage \
         kind-up kind-down k8s-apply k8s-admit \
         k8s-demo netpol-proof \
+        local-up local-ingest local-ask local-down policy-k8s-local \
         ci demo clean
 
 help:
@@ -178,7 +179,7 @@ k8s-demo: k8s-apply
 	@echo ""
 	@echo "every insecure manifest was refused by the cluster"
 
-ci: fmt validate policy policy-negative policy-k8s policy-k8s-negative policy-coverage
+ci: fmt validate policy policy-negative policy-k8s policy-k8s-local policy-k8s-negative policy-coverage
 	@echo ""
 	@echo "all security gates passed"
 
@@ -220,3 +221,39 @@ clean:
 	@rm -f $(TF_EKS)/tf.plan $(TF_EKS)/plan.json
 	@rm -f $(FIXTURE_DIR)/tf.plan $(FIXTURE_DIR)/plan.json
 	@echo "generated artefacts removed"
+
+
+########################################
+# The local runtime
+#
+# The same platform with no cloud account: Ollama for inference, Llama Guard as
+# a separate guard service, OpenSearch in-cluster for vectors. See local/ and
+# the README section on what this proves and what it cannot.
+#
+# Podman needs /opt/podman/bin on PATH for krunkit, or the machine will not
+# start. These targets do not put it there -- that is the operator's shell --
+# but they fail clearly rather than mysteriously if it is missing.
+########################################
+
+local-up:
+	@bash local/up.sh
+
+# Operator action, deliberately. The service has read-only credentials on the
+# index; this uses the admin ones and creates the read-only user it will use.
+local-ingest:
+	@bash local/ingest.sh
+
+# One question, from the command line, as a named caller. Useful for proving a
+# control without opening a browser:
+#   make local-ask WHO=priya QUESTION="what is the parental leave policy?"
+local-ask:
+	@bash local/ask.sh
+
+local-down:
+	@bash local/down.sh
+
+# The local manifests carry the same 77 rules as everything else. They are
+# gated as sources, with the substitution markers still in them, because that is
+# what is committed and reviewed -- local/up.sh renders digests into a copy.
+policy-k8s-local:
+	@$(GATE) pass $(K8S_DIR)/local "local runtime manifests"

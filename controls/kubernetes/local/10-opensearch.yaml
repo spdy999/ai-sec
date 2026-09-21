@@ -1,0 +1,199 @@
+# The vector store.
+#
+# The same engine as OpenSearch Serverless, which is the point: retrieval.py is
+# unchanged between the two runtimes, entitlement filter and all, because the
+# query language is the same one. A different vector database would have meant
+# writing that control twice, and a control written twice is a control that
+# drifts.
+#
+# Single node, in-memory-backed storage, and a heap small enough to coexist with
+# everything else on a laptop. None of that is production shape and none of it
+# is pretending to be: the deployed platform uses a managed, encrypted,
+# multi-AZ collection, and this exists so the retrieval path has something real
+# to query.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: genai-vectors
+  namespace: genai-platform
+  annotations:
+    # No IRSA here -- see the note on service_account_identity_annotations in
+    # controls/policy/kubernetes.rego. This names what the workload is, so a
+    # reviewer reading the manifest knows what it can reach.
+    genai.platform/local-identity: "opensearch-node (no external credentials)"
+  labels:
+    app.kubernetes.io/name: genai-vectors
+    app.kubernetes.io/part-of: koerber-genai-assistant
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: genai-vectors
+  namespace: genai-platform
+  labels:
+    app.kubernetes.io/name: genai-vectors
+    app.kubernetes.io/part-of: koerber-genai-assistant
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: genai-vectors
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: genai-vectors
+        app.kubernetes.io/part-of: koerber-genai-assistant
+    spec:
+      serviceAccountName: genai-vectors
+      automountServiceAccountToken: false
+
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+
+      # OpenSearch templates its configuration at boot -- the security plugin
+      # writes certificates and an internal users file into its config
+      # directory -- so the naive way to run it is with a writable root
+      # filesystem. That is the one rule the workload policy would then have to
+      # waive, for the one workload that found it inconvenient, which is how a
+      # rule stops being a rule.
+      #
+      # Instead the image's config is copied into an emptyDir once, before the
+      # node starts, and mounted over the path it wants to write. The container
+      # keeps readOnlyRootFilesystem: true and still gets a writable config
+      # directory; what it writes lives in the pod and dies with it.
+      initContainers:
+        - name: seed-config
+          image: localhost:5001/opensearch@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - cp -a /usr/share/opensearch/config/. /seed/
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: config
+              mountPath: /seed
+
+      containers:
+        - name: opensearch
+          image: localhost:5001/opensearch@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - name: http
+              containerPort: 9200
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            # Every path this container writes is an emptyDir, seeded by the
+            # init container above. Nothing it writes touches the image layer,
+            # survives the pod, or is shared with another workload.
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
+
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+
+          env:
+            - name: discovery.type
+              value: single-node
+            - name: OPENSEARCH_JAVA_OPTS
+              value: "-Xms512m -Xmx512m"
+            - name: bootstrap.memory_lock
+              value: "false"
+            # The security plugin is on. It is what enforces the read/write
+            # split: the mediation service authenticates as a user with `read`
+            # on the corpus index, ingestion as one that can write it. Turning
+            # it off would make the demo simpler and would delete the control
+            # that makes corpus poisoning impossible rather than unlikely.
+            - name: DISABLE_SECURITY_PLUGIN
+              value: "false"
+            - name: DISABLE_INSTALL_DEMO_CONFIG
+              value: "false"
+            - name: OPENSEARCH_INITIAL_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: genai-vectors-credentials
+                  key: admin_password
+
+          volumeMounts:
+            - name: config
+              mountPath: /usr/share/opensearch/config
+            - name: data
+              mountPath: /usr/share/opensearch/data
+            - name: logs
+              mountPath: /usr/share/opensearch/logs
+            - name: tmp
+              mountPath: /tmp
+
+          readinessProbe:
+            httpGet:
+              path: /_cluster/health
+              port: http
+              scheme: HTTPS
+              httpHeaders:
+                - name: Authorization
+                  value: BASIC_AUTH_HEADER
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 30
+
+      volumes:
+        - name: config
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: data
+          emptyDir:
+            sizeLimit: 2Gi
+        - name: logs
+          emptyDir:
+            sizeLimit: 256Mi
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: genai-vectors
+  namespace: genai-platform
+  labels:
+    app.kubernetes.io/name: genai-vectors
+    app.kubernetes.io/part-of: koerber-genai-assistant
+spec:
+  selector:
+    app.kubernetes.io/name: genai-vectors
+  ports:
+    - name: http
+      port: 9200
+      targetPort: http

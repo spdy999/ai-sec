@@ -39,9 +39,16 @@ _timeout = config.LOCAL_TIMEOUT_SECONDS
 
 
 def embed(text: str) -> list[float]:
+    """Through the guard, not straight to the model.
+
+    This service has one egress target for inference and that is deliberate. A
+    NetworkPolicy permitting this pod to reach the model host on 11434 would
+    permit it to reach the chat endpoint as well, and then "the guardrail is not
+    the application's to skip" stops being true.
+    """
     response = requests.post(
-        f"{config.OLLAMA_ENDPOINT}/api/embeddings",
-        json={"model": config.EMBEDDING_MODEL_ID, "prompt": text},
+        f"{config.GUARD_ENDPOINT}/embed",
+        json={"text": text},
         timeout=_timeout,
     )
     response.raise_for_status()

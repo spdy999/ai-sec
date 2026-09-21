@@ -39,7 +39,6 @@ if PROVIDER == "bedrock":
     CHAT_MODEL_ID = _required("BEDROCK_CHAT_MODEL_ID")
     EMBEDDING_MODEL_ID = _required("BEDROCK_EMBEDDING_MODEL_ID")
 
-    OLLAMA_ENDPOINT = ""
     GUARD_ENDPOINT = ""
     LOCAL_TIMEOUT_SECONDS = 0
     VECTOR_USERNAME = ""
@@ -53,10 +52,10 @@ else:
     CHAT_MODEL_ID = os.environ.get("CHAT_MODEL_ID", "qwen2.5:3b")
     EMBEDDING_MODEL_ID = os.environ.get("EMBEDDING_MODEL_ID", "nomic-embed-text")
 
-    # The model endpoint is here only for embeddings. Generation goes through
-    # GUARD_ENDPOINT, and NetworkPolicy is what stops this pod taking the
-    # shortcut -- see providers/local.py.
-    OLLAMA_ENDPOINT = _required("OLLAMA_ENDPOINT").rstrip("/")
+    # One inference endpoint, and it is the guard. There is deliberately no
+    # model address here: a pod that knows how to reach the model, and is
+    # permitted to, can call the chat endpoint whatever its own code says.
+    # Embeddings go through the guard for exactly that reason.
     GUARD_ENDPOINT = _required("GUARD_ENDPOINT").rstrip("/")
     LOCAL_TIMEOUT_SECONDS = int(os.environ.get("LOCAL_TIMEOUT_SECONDS", "120"))
 

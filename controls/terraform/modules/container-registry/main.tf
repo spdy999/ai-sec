@@ -13,6 +13,13 @@ resource "aws_ecr_repository" "this" {
   # different artefacts.
   image_tag_mutability = "IMMUTABLE"
 
+  # Tags are immutable, so an image pushed here cannot be removed by pushing
+  # over it, and a teardown fails with RepositoryNotEmptyException while any
+  # image remains. That is the right default for a registry whose contents are
+  # what production runs; it is the wrong one for an environment that exists to
+  # be provisioned and destroyed, where it strands the rest of the layer.
+  force_delete = var.force_delete
+
   image_scanning_configuration {
     scan_on_push = true
   }

@@ -1,0 +1,239 @@
+# Where the guardrail is actually enforced.
+#
+# The mediation service holds the identity and the entitlements. It must not
+# also hold a route to the model, or "call the guard first" becomes a convention
+# in its own source code -- and its own source code is what an attacker with
+# code execution in that pod gets to rewrite.
+#
+#     mediation ──allowed──> guard ──allowed──> model host
+#         │                                        ▲
+#         └────────────────denied───────────────────┘
+#
+# So: the guard may egress to the model host. The mediation pod may egress to
+# the guard and to the vector store and to DNS, and to nothing else. Deleting
+# the guardrail call from answering.py does not produce an unguarded answer, it
+# produces a connection timeout.
+#
+# This is the local equivalent of the Bedrock arrangement, where IAM conditions
+# bedrock:InvokeModel on bedrock:GuardrailIdentifier and an unguarded call is
+# refused before it reaches the service. Different mechanism, same property.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: genai-platform
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# DNS for everything in the namespace, to the cluster resolver on 53 only, so it
+# cannot be used as a tunnel to an arbitrary nameserver.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: genai-platform
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# Mediation may reach the guard. This is its only route to inference.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mediation-to-guard
+  namespace: genai-platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: genai-mediation
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: genai-guard
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+# Mediation may reach the vector store, to read the corpus index. Read is all
+# the credentials in its Secret can do; this policy governs reachability, not
+# permission, and both are needed.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mediation-to-vectors
+  namespace: genai-platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: genai-mediation
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: genai-vectors
+      ports:
+        - protocol: TCP
+          port: 9200
+---
+# The guard, and only the guard, may leave the cluster for the model host.
+#
+# The CIDR is the podman machine's gateway range rather than 0.0.0.0/0. On a
+# laptop that distinction is nearly cosmetic; in the deployed platform the
+# equivalent rule names the VPC CIDR and there is no route off it at all, which
+# is where it stops being cosmetic.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-guard-to-model-host
+  namespace: genai-platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: genai-guard
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: MODEL_HOST_CIDR
+      ports:
+        - protocol: TCP
+          port: 11434
+---
+# The other half of every rule above.
+#
+# default-deny-all denies Ingress as well as Egress, so an egress rule on the
+# caller is necessary and not sufficient: the callee must also admit it. Writing
+# only the egress half produces a connect timeout rather than a refusal, which
+# reads like a broken service and sends you looking at the application.
+#
+# Stating both halves is also the more honest policy. "Who may this pod talk to"
+# and "who may talk to this pod" are different questions, and a reviewer should
+# be able to answer the second one by reading the callee.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-guard
+  namespace: genai-platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: genai-guard
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: genai-mediation
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+# The vector store admits the service that reads it and the job that writes it,
+# and nothing else. Note that the two are distinguished here only by
+# reachability; what each may *do* to the index is the OpenSearch role, and both
+# controls are needed.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-vectors
+  namespace: genai-platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: genai-vectors
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: genai-mediation
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: genai-ingest
+      ports:
+        - protocol: TCP
+          port: 9200
+---
+# Ingress to mediation, from the node, for the NodePort the browser reaches.
+#
+# The deployed platform has an authenticating gateway in front of this and the
+# operator reaches it by port-forward from the jump host. Neither exists here,
+# and inventing a fake gateway would prove nothing. What is preserved is that
+# the only ingress in the namespace is to the mediation service on its own port:
+# nothing reaches the guard or the vector store from outside.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-mediation
+  namespace: genai-platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: genai-mediation
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 8443
+---
+# Ingestion. A separate identity with a separate network path, run as a Job by
+# an operator and never by the service.
+#
+# It needs two things the mediation pod is not allowed to have together: write
+# access to the vector store, and a route to the embedding model. That
+# combination is exactly what a prompt injection would need to poison the
+# corpus, and it exists only while an operator is running the job.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingest-egress
+  namespace: genai-platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: genai-ingest
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: genai-vectors
+      ports:
+        - protocol: TCP
+          port: 9200
+    - to:
+        - ipBlock:
+            cidr: MODEL_HOST_CIDR
+      ports:
+        - protocol: TCP
+          port: 11434

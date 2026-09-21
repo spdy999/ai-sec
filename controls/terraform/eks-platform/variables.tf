@@ -133,3 +133,9 @@ variable "s3_prefix_list_id" {
   type        = string
   default     = "pl-00000000"
 }
+
+variable "ephemeral_environment" {
+  description = "True when this deployment exists to be torn down again -- the demo account. It lets terraform destroy delete the container registry with images still in it. Left false, a teardown fails on RepositoryNotEmptyException and strands the rest of the layer, which is the correct behaviour for a registry holding what production runs and the wrong one for a lab."
+  type        = bool
+  default     = false
+}

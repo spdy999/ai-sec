@@ -28,3 +28,9 @@ variable "retained_image_count" {
   type        = number
   default     = 10
 }
+
+variable "force_delete" {
+  description = "Let terraform destroy delete the repository with images still in it. False wherever the registry holds what production runs; true only for an ephemeral environment."
+  type        = bool
+  default     = false
+}
