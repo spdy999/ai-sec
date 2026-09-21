@@ -56,6 +56,8 @@ controls/terraform/
 controls/policy/      70 Rego rules, applied to Terraform plans AND Kubernetes YAML
 controls/kubernetes/  base manifests, Kyverno policies, and manifests that must be refused
 .github/workflows/    the CI gate chain, mirroring make ci
+docs/RUNBOOK.md       operational how-to: prereqs, offline loop, live cluster,
+                      real AWS apply/destroy order, demo, troubleshooting
 ```
 
 Every control is validated by proving it rejects bad input, never only that it
@@ -145,7 +147,9 @@ Controls 1 and 2 are complete and validated in both directions. Control 3 is
 written but has not run anywhere. The README is written, including the section
 on what the local cluster cannot prove (IRSA federating with STS, EKS access
 entries, CMK envelope encryption of etcd, control plane audit logs reaching
-CloudWatch).
+CloudWatch). `docs/RUNBOOK.md` is written: operational (how to run things);
+README stays the reviewer-facing what/why/proof doc — don't duplicate content
+between them.
 
 Outstanding: the five-page design summary and the top-5 risk assessment.
 
