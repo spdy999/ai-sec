@@ -166,6 +166,32 @@ data "aws_iam_policy_document" "deploy_infrastructure" {
     resources = ["*"]
   }
 
+  # The OpenSearch Serverless VPC endpoint publishes its private DNS through a
+  # Route 53 private hosted zone that the service creates and owns. Terraform
+  # waits on the endpoint reaching ACTIVE, and the endpoint instead reaches
+  # FAILED with ACCESS_DENIED on route53:ListHostedZonesByVPC when the caller
+  # cannot see that zone. Named actions rather than route53:*, and no ARN,
+  # because the zone does not exist until the endpoint creates it.
+  statement {
+    sid    = "PrivateDnsForServiceEndpoints"
+    effect = "Allow"
+
+    actions = [
+      "route53:ListHostedZonesByVPC",
+      "route53:ListHostedZones",
+      "route53:GetHostedZone",
+      "route53:CreateHostedZone",
+      "route53:DeleteHostedZone",
+      "route53:AssociateVPCWithHostedZone",
+      "route53:DisassociateVPCFromHostedZone",
+      "route53:ChangeResourceRecordSets",
+      "route53:ListResourceRecordSets",
+      "route53:GetChange",
+    ]
+
+    resources = ["*"]
+  }
+
   # Only roles and policies carrying the platform's own name prefix.
   statement {
     sid    = "IamForPlatformRoles"
