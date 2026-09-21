@@ -77,8 +77,10 @@ controls/terraform/
   pipeline-iam/       root: run by hand - OIDC provider and the role Actions assumes
 controls/policy/      70 Rego rules, applied to Terraform plans AND Kubernetes YAML
 controls/kubernetes/  base manifests, Kyverno policies, and manifests that must be refused
-.github/workflows/    security.yml (gate chain, mirrors make ci), infra-provision.yml,
-                      infra-destroy.yml (both dispatch-only, OIDC, no stored keys)
+.github/workflows/    security.yml (gate chain, mirrors make ci); tf-layer.yml
+                      (reusable: the only place terraform runs); infra-provision,
+                      infra-destroy, infra-eks-platform, infra-bedrock-ai
+                      (dispatch-only callers, OIDC, no stored keys)
 .github/scripts/      backend + tfvars generation and cross-root wiring for deploy
 docs/RUNBOOK.md       operational how-to: prereqs, offline loop, live cluster,
                       real AWS apply/destroy order, demo, troubleshooting

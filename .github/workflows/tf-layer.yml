@@ -1,0 +1,135 @@
+# One Terraform layer, applied or destroyed.
+#
+# Everything that touches AWS lives here and nowhere else. Callers pass a layer
+# name and an action; they cannot pass their own terraform commands, skip the
+# gate chain, or apply a plan they did not just produce. A second copy of these
+# steps in a caller is how the two layers drift apart.
+
+name: terraform layer
+
+on:
+  workflow_call:
+    inputs:
+      layer:
+        description: Root module under controls/terraform to act on.
+        required: true
+        type: string
+      action:
+        description: apply or destroy.
+        required: true
+        type: string
+      run_gate:
+        description: Run the full security gate chain first. Only skipped when the caller already ran it.
+        required: false
+        default: true
+        type: boolean
+
+env:
+  TF_VERSION: "1.14.8"
+  CONFTEST_VERSION: "0.56.0"
+  AWS_REGION: eu-central-1
+
+jobs:
+  gate:
+    name: security gate
+    if: inputs.run_gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: install conftest
+        run: |
+          set -euo pipefail
+          curl -sSL -o conftest.tar.gz \
+            "https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz"
+          tar xzf conftest.tar.gz conftest
+          sudo mv conftest /usr/local/bin/
+
+      - name: full gate chain
+        run: make ci
+
+  terraform:
+    name: ${{ inputs.action }} ${{ inputs.layer }}
+    needs: [gate]
+    # `always()` so a deliberately skipped gate does not skip this too; the
+    # explicit result check is what keeps a *failed* gate blocking.
+    if: always() && (needs.gate.result == 'success' || needs.gate.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    # Load-bearing: the deploy role's trust policy pins
+    # repo:<owner>/<repo>:environment:production in the OIDC subject, so a job
+    # without this block cannot assume the role at all.
+    environment:
+      name: production
+
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      TF_DIR: controls/terraform/${{ inputs.layer }}
+      TF_EKS: controls/terraform/eks-platform
+      TF_BEDROCK: controls/terraform/bedrock-ai
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-${{ inputs.action }}-${{ github.run_id }}
+
+      - name: write backend and variables
+        run: ./.github/scripts/tf-config.sh "$TF_DIR" "${{ inputs.layer }}"
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          TF_STATE_REGION: ${{ vars.TF_STATE_REGION }}
+          COST_ALERT_EMAIL: ${{ vars.COST_ALERT_EMAIL }}
+
+      # The AI layer's inputs are the platform layer's outputs, read from
+      # applied state rather than passed between jobs, so there is one source of
+      # truth and no chance of acting on a stale VPC id.
+      - name: wire to the platform layer
+        if: inputs.layer == 'bedrock-ai'
+        run: |
+          set -euo pipefail
+          ./.github/scripts/tf-config.sh "$TF_EKS" eks-platform
+          ./.github/scripts/tf-wire.sh
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          TF_STATE_REGION: ${{ vars.TF_STATE_REGION }}
+
+      - name: init
+        run: terraform -chdir="$TF_DIR" init -input=false -no-color
+
+      # Applying a saved plan file, not re-planning: what is printed above is
+      # exactly what runs, with nothing re-resolved in between.
+      - name: plan
+        run: |
+          set -euo pipefail
+          VAR_FILES="-var-file=ci.auto.tfvars"
+          if [ -f "$TF_DIR/platform.auto.tfvars" ]; then
+            VAR_FILES="$VAR_FILES -var-file=platform.auto.tfvars"
+          fi
+          DESTROY=""
+          if [ "${{ inputs.action }}" = "destroy" ]; then
+            DESTROY="-destroy"
+          fi
+          terraform -chdir="$TF_DIR" plan -input=false -no-color $DESTROY $VAR_FILES -out=tf.plan
+
+      - name: ${{ inputs.action }}
+        run: terraform -chdir="$TF_DIR" apply -input=false -no-color tf.plan

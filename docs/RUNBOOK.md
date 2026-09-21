@@ -96,7 +96,15 @@ After that:
 ```bash
 gh workflow run infra-provision.yml            # gate chain, then both layers in order
 gh workflow run infra-destroy.yml -f confirm=destroy
+
+# one layer at a time, once it already exists
+gh workflow run infra-eks-platform.yml -f action=apply
+gh workflow run infra-bedrock-ai.yml   -f action=destroy
 ```
+
+Every terraform command lives in `tf-layer.yml`, a reusable workflow the four
+above call. A caller passes a layer and an action and nothing else — it cannot
+supply its own terraform invocation or skip the gate chain on a first run.
 
 `infra-provision.yml` re-runs `make ci` before it authenticates, generates the S3
 backend and the real tfvars at run time (`.github/scripts/tf-config.sh`), and

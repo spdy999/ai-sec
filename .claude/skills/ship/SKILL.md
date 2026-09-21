@@ -100,7 +100,7 @@ what would fix it.
 
 ## Never
 
-- **Never dispatch `infra-provision.yml` or `infra-destroy.yml` from this skill.** They apply
+- **Never dispatch any `infra-*.yml` workflow from this skill.** They apply
   to a real AWS account at roughly $16/day. Deployment is a separate, explicit
   decision the user makes.
 - Never commit `plan.json`, `*.tfstate`, `terraform.tfvars`, `*.auto.tfvars`

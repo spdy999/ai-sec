@@ -1,0 +1,34 @@
+# The platform layer on its own: VPC, cluster, nodes, endpoints.
+#
+# Use this to re-run one layer. A first deployment of an empty account should
+# go through infra-provision.yml instead, which orders the two layers.
+
+name: infra eks-platform
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: apply or destroy
+        required: true
+        type: choice
+        options: [apply, destroy]
+        default: apply
+
+concurrency:
+  group: genai-platform-live
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  layer:
+    uses: ./.github/workflows/tf-layer.yml
+    with:
+      layer: eks-platform
+      action: ${{ inputs.action }}
+    permissions:
+      contents: read
+      id-token: write
+    secrets: inherit

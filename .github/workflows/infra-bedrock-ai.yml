@@ -1,0 +1,34 @@
+# The AI layer on its own: Bedrock, guardrail, corpus, vectors, identity.
+#
+# Needs the platform layer already applied - it reads its outputs. A first
+# deployment should go through infra-provision.yml, which orders the two.
+
+name: infra bedrock-ai
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: apply or destroy
+        required: true
+        type: choice
+        options: [apply, destroy]
+        default: apply
+
+concurrency:
+  group: genai-platform-live
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  layer:
+    uses: ./.github/workflows/tf-layer.yml
+    with:
+      layer: bedrock-ai
+      action: ${{ inputs.action }}
+    permissions:
+      contents: read
+      id-token: write
+    secrets: inherit
