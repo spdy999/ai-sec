@@ -27,17 +27,16 @@ resource "aws_budgets_budget" "platform" {
 
 # A stolen workload identity spending on an expensive model shows up here
 # before it shows up anywhere else.
+# DIMENSIONAL, not CUSTOM. A CUSTOM monitor's specification only accepts the
+# LINKED_ACCOUNT dimension -- naming services there fails with "Dimension not
+# valid; must be scoped to 'LINKED_ACCOUNT'". Monitoring the SERVICE dimension
+# is a monitor type of its own, and it watches every service rather than a
+# named list, which is what is wanted here anyway: the alarming case is spend
+# appearing somewhere nobody thought to list.
 resource "aws_ce_anomaly_monitor" "services" {
-  name         = "${var.name_prefix}-${var.environment}-services"
-  monitor_type = "CUSTOM"
-
-  monitor_specification = jsonencode({
-    Dimensions = {
-      Key          = "SERVICE"
-      Values       = var.monitored_services
-      MatchOptions = ["EQUALS"]
-    }
-  })
+  name              = "${var.name_prefix}-${var.environment}-services"
+  monitor_type      = "DIMENSIONAL"
+  monitor_dimension = "SERVICE"
 }
 
 resource "aws_ce_anomaly_subscription" "services" {

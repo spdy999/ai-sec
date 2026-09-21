@@ -31,14 +31,3 @@ variable "alert_thresholds_percent" {
   default     = [50, 80, 100]
 }
 
-variable "monitored_services" {
-  description = "Services the anomaly monitor watches."
-  type        = list(string)
-
-  default = [
-    "Amazon Bedrock",
-    "Amazon OpenSearch Service",
-    "Amazon Elastic Kubernetes Service",
-    "Amazon Elastic Compute Cloud - Compute",
-  ]
-}

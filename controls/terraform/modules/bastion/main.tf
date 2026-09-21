@@ -29,6 +29,7 @@ resource "aws_launch_template" "bastion" {
   network_interfaces {
     associate_public_ip_address = false
     security_groups             = [aws_security_group.bastion.id]
+    subnet_id                   = var.subnet_id
     delete_on_termination       = true
   }
 
@@ -70,8 +71,11 @@ resource "aws_launch_template" "bastion" {
 }
 
 resource "aws_instance" "bastion" {
-  subnet_id = var.subnet_id
-
+  # Nothing about the network is set here. Subnet, security group and public IP
+  # all live in the launch template's network_interfaces block, because EC2
+  # refuses a RunInstances request that carries both a network interface
+  # specification and instance-level equivalents -- once for the security group,
+  # then again for the subnet.
   launch_template {
     id      = aws_launch_template.bastion.id
     version = aws_launch_template.bastion.latest_version
