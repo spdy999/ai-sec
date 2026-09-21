@@ -156,23 +156,20 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-      security-events: write
 
     steps:
       - uses: actions/checkout@v4
 
+      # Findings go to the job log, not to code scanning: SARIF upload needs
+      # GitHub Advanced Security, which a private repo on a free plan does not
+      # have. The scan is advisory either way.
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: config
           scan-ref: controls/
-          format: sarif
-          output: trivy.sarif
+          format: table
           severity: HIGH,CRITICAL
           exit-code: "0" # reported, not blocking: this is advisory input
-
-      - uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: trivy.sarif
 
   # ---------------------------------------------------------------------------
   # The gate itself. Branch protection requires this check, so every job above
