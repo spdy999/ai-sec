@@ -3,7 +3,7 @@
 # bedrock-ai's inputs are eks-platform's outputs, so the order is not a
 # preference. This workflow exists so nobody has to remember it.
 #
-# Cost: roughly $16/day while up, about 71% of it OpenSearch Serverless. Run
+# Cost: roughly $17/day while up, two thirds of it OpenSearch Serverless. Run
 # infra-destroy.yml when the session ends.
 
 name: infra provision
