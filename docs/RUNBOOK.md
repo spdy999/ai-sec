@@ -156,11 +156,12 @@ terraform -chdir=controls/terraform/bedrock-ai apply \
   -var eks_oidc_provider_url=<from step 2>
 ```
 
-**Always tear down after a live session** — `infra-destroy.yml`, or
-`terraform destroy` on both roots by hand, bedrock-ai first, then eks-platform.
-Nothing auto-tears-down. `pipeline-iam` is not part of a teardown: the
-state bucket, its CMK and the deploy role survive, because the next deployment
-needs them.
+**Teardown is a decision, not a habit.** The stack is left up between
+sessions on purpose and costs roughly $17/day; nothing is destroyed without an
+explicit instruction. When that instruction comes, follow §7 — or, in this
+by-hand path, `terraform destroy` on both roots, bedrock-ai first, then
+eks-platform. `pipeline-iam` is never part of a teardown: the state bucket, its
+CMK and the deploy role survive, because the next deployment needs them.
 
 ## 5. Presentation demo
 
@@ -313,3 +314,135 @@ kind.
 | podman machine won't start | `krunkit` not found | put `/opt/podman/bin` on `PATH` |
 | `kubectl` hits the wrong cluster | forgot `--context kind-koerber-demo` | always pin context by hand; never rely on current-context here |
 | Merging the two Terraform roots "to simplify" | OIDC issuer URL becomes unknown at plan time in a single root, which makes the IRSA trust policy unknown, which makes its rule stop firing — silently | don't merge them; that split is a policy requirement, not an ownership one |
+
+## 7. Teardown and rebuild
+
+Written for the case that happens between sessions: the stack is up, costing
+roughly $17/day, and it has to go away and come back intact. Roughly 5 minutes
+down, 25-30 minutes back up, plus 5 minutes by hand at the end.
+
+**Never start either half without an explicit instruction in the moment.** The
+account is personal.
+
+### 7a. What survives, and what must not be touched
+
+Torn down by `infra-destroy.yml`: both layers, everything in them — cluster,
+nodes, VPC, endpoints, jump host, guardrail, collection, secrets, corpus bucket,
+ECR repository, trail.
+
+Survives, and rebuild depends on it:
+
+- `pipeline-iam` — the OIDC provider and the deploy role. Separate root, local
+  state, never dispatched. Destroy it and the one-time setup in §4a has to be
+  redone from a laptop with admin credentials.
+- The Terraform **state bucket**. The destroy writes empty state into it.
+- Actions variables `TF_STATE_BUCKET`, `AWS_DEPLOY_ROLE_ARN`,
+  `CLUSTER_ADMIN_ARNS`, `COST_ALERT_EMAIL`, and the `production` environment.
+- The `eu-south-1` / `eu-south-2` region opt-ins. Account-level, they persist.
+
+The pipeline sets `ephemeral_environment = true`, so the secrets are deleted
+with a zero recovery window and the versioned trail bucket is emptied first.
+Both names are reusable immediately — no seven-day wait, no
+`InvalidRequestException: already scheduled for deletion`.
+
+### 7b. Teardown
+
+```bash
+gh run list --limit 5                 # nothing in_progress before starting
+gh workflow run infra-destroy.yml -f confirm=destroy
+gh run watch <run-id> --exit-status --interval 20
+```
+
+Rules that keep it from going wrong:
+
+- **Wait for a quiet pipeline.** An apply and a destroy share the
+  `genai-platform-live` concurrency group, so the second queues rather than
+  interleaving — but a queued destroy behind a failing apply is worth knowing
+  about, not discovering.
+- **Never cancel a run mid-terraform.** A cancelled apply leaves the state lock
+  held, and the next run fails on it. The workflows set
+  `cancel-in-progress: false` for this reason. If it happens anyway:
+  `terraform force-unlock <id>` against the same backend, once no run is live.
+- **Never dispatch the single-layer destroys by hand** unless the combined one
+  has already failed. `bedrock-ai` must go first: its IRSA role trusts the
+  cluster's OIDC provider.
+- A destroy runs no gate chain. The typed `confirm=destroy` is the only guard.
+
+Then confirm it is actually gone, rather than trusting a green run:
+
+```bash
+aws-vault exec spdy999 --no-session -- env AWS_REGION=eu-central-1 sh -c '
+  aws eks list-clusters
+  aws opensearchserverless list-collections
+  aws bedrock list-guardrails --query "guardrails[].name"
+  aws secretsmanager list-secrets --query "SecretList[].Name"
+  aws ec2 describe-instances --filters Name=instance-state-name,Values=running \
+    --query "Reservations[].Instances[].InstanceId"'
+```
+
+All five empty. Cost stops within a day; the last day still bills.
+
+### 7c. Rebuild, in order
+
+Each step waits for the previous one to be **green**, not merely started. The
+order is a dependency chain, not a preference.
+
+```bash
+# 1. both infrastructure layers, platform then AI            ~19 min from empty
+gh workflow run infra-provision.yml
+gh run watch <run-id> --exit-status --interval 30
+
+# 2. the signing key and the TLS pair, generated on the jump host    ~1 min
+gh workflow run app-secrets.yml
+gh run watch <run-id> --exit-status --interval 20
+
+# 3. image build, then render + gate + apply with that digest        ~4 min
+gh workflow run app-release.yml
+gh run watch <run-id> --exit-status --interval 20
+
+# 4. the vector index; --recreate, so it asks for confirmation       ~1 min
+gh workflow run app-index.yml -f confirm=index
+gh run watch <run-id> --exit-status --interval 20
+```
+
+Why each wait matters:
+
+- **2 before 3.** The pod reads both secrets at startup with its own IRSA
+  credentials. Deploy first and it crash-loops on a secret that does not exist,
+  and the rollout fails on a timeout rather than on the real reason.
+- **3 before 4.** Ingestion runs from the jump host, but it needs the AI layer's
+  endpoints and the collection's data access policy, both from step 1; step 3
+  is what proves the wiring before an ingest failure has to be diagnosed.
+- **Do not hand-edit the ConfigMap.** Every identifier changes on a rebuild —
+  guardrail id, guardrail version (back to `1`), collection endpoint, secret
+  ARNs, bucket names. `controls/kubernetes/render.sh` substitutes them from
+  applied state during `app-deploy`, which is exactly why nothing downstream
+  refers to a value typed by a human.
+- If step 1 is dispatched while `CLUSTER_ADMIN_ARNS` is unset, the cluster comes
+  up with no human admin at all (`bootstrap_cluster_creator_admin_permissions`
+  is off) and `kubectl` answers `Unauthorized`. Fixing it means another apply.
+
+### 7d. The five manual minutes
+
+```bash
+# a shell on the jump host, then the API server through it — see §5a
+aws ssm start-session --target <instance-id> \
+  --document-name AWS-StartPortForwardingSessionToRemoteHost \
+  --parameters host="<api server hostname>",portNumber=443,localPortNumber=6443
+
+kubectl --kubeconfig ~/.kube/koerber-live.yaml -n genai-platform get pods
+kubectl ... exec deploy/genai-mediation -- python -m mediation.tokens alice --groups all-staff
+kubectl ... exec deploy/genai-mediation -- python -m mediation.tokens dana  --groups finance-team
+kubectl ... port-forward deploy/genai-mediation 8443:8443
+```
+
+Front end at `https://127.0.0.1:8443/`, self-signed. Tokens are minted **in the
+pod**: the signing key's resource policy denies every principal but the workload
+and ingestion roles, so a laptop with administrator credentials cannot read it.
+
+A deploy replaces the pods and silently kills the port-forward — restart it
+rather than debugging an empty response.
+
+Then the four demo rows in §5, in order. The injection row is the one that
+proves the rebuild is genuinely finished: `stopReason: guardrail_intervened`,
+not a polite refusal from the model.
