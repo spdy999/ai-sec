@@ -254,12 +254,24 @@ prompt-attack filter only to input the caller marks as untrusted, and
 entirely: the trace returns with a processing latency set, every policy unit
 zero, and `amazon-bedrock-guardrailAction: NONE`. The same text through
 `ApplyGuardrail` comes back `BLOCKED` at HIGH confidence, which is how to tell a
-misconfigured guardrail from an unapplied one. `Converse`, with the question in
-its own `guardContent` block, is what works -- so `providers.generate` takes the
-system prompt, the passages and the question as three arguments rather than one
-string. The passages stay outside the block deliberately: one of them is a
-planted injection, and scanning quoted documents would block the corpus rather
-than the caller.
+misconfigured guardrail from an unapplied one. `Converse` is what works -- and the console says so: the
+prompt-attack panel carries the note *"If you are using InvokeModel or
+InvokeModelResponseStream for text content, use input tags to apply prompt
+attack filtering. For Converse and ConverseStream APIs, input tags are not
+required."* So the `guardContent` block does not enable the scan on Converse;
+it scopes it. `providers.generate` takes the system prompt, the passages and
+the question as three arguments, and only the question goes in the block --
+one of the passages is a planted injection, and scanning quoted documents
+would block the corpus rather than the caller.
+
+**The guardrail's console form differs from the Terraform in three places.**
+Harmful categories and prompt attacks are separate toggles on one page, so
+enabling the prompt-attack filter alone leaves `INSULTS` off. Prompt attacks
+has one threshold slider and an action dropdown, not an input and an output
+strength -- `output_strength = "NONE"` satisfies a required API field and has
+no control. And the page carries a **Content filters tier** choice, Classic or
+Standard, that the module does not set: the deployed guardrail is on Classic by
+default rather than by decision, which belongs in the risk assessment.
 
 **Three IAM shapes were wrong in ways only a real question could find**, each in
 code that passed every gate and applied cleanly. The workload could not embed at
