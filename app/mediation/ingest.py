@@ -95,12 +95,19 @@ def bedrock_backend(args):
     s3 = session.client("s3")
     bedrock = session.client("bedrock-runtime")
 
+    # The default ten second read timeout is too short for Serverless: the first
+    # write after an index is created waits on shards being placed, and the call
+    # returns a ReadTimeout rather than an error, so it reads as a network fault
+    # rather than a cold start. Retries are on for the same reason.
     client = OpenSearch(
         hosts=[{"host": args.endpoint.replace("https://", ""), "port": 443}],
         http_auth=AWSV4SignerAuth(session.get_credentials(), args.region, "aoss"),
         use_ssl=True,
         verify_certs=True,
         connection_class=RequestsHttpConnection,
+        timeout=60,
+        max_retries=3,
+        retry_on_timeout=True,
     )
 
     def documents():
