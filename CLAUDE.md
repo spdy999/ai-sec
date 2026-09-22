@@ -84,12 +84,14 @@ controls/data/corpus/ six synthetic markdown documents, uploaded by the bedrock-
 app/                  the only custom code: mediation service (FastAPI) and its
                       React front-end, bundled into one image
 .github/workflows/    security.yml (gate chain, mirrors make ci); tf-reusable-workflow.yaml
-                      (reusable: the only place terraform runs); infra-provision,
-                      infra-destroy, infra-eks-platform, infra-bedrock-ai
-                      (dispatch-only callers, OIDC, no stored keys); app-image.yml
-                      builds and pushes the mediation image; app-secrets.yml
-                      generates the secret material on the jump host;
-                      app-deploy.yml renders, gates and applies the manifests
+                      (reusable: the only place terraform runs); infra-provision
+                      (both layers in order, and the only infra workflow a push
+                      triggers); infra-destroy, infra-eks-platform,
+                      infra-bedrock-ai (dispatch-only, OIDC, no stored keys);
+                      app-image.yml builds and pushes the mediation image;
+                      app-secrets.yml generates the secret material on the jump
+                      host; app-deploy.yml renders, gates and applies the
+                      manifests; app-index.yml builds the vector index
 .github/scripts/      backend + tfvars generation and cross-root wiring for deploy
 docs/RUNBOOK.md       operational how-to: prereqs, offline loop, live cluster,
                       real AWS apply/destroy order, demo, troubleshooting
@@ -106,8 +108,12 @@ $0/offline-only. `terraform apply` runs against a real AWS account in
 `eu-central-1`, tuned to roughly $17/day (two thirds of it OpenSearch
 Serverless; the jump host and its three SSM endpoints add about $1).
 The Makefile still has no `apply`/`destroy` target — don't add live-deploy
-targets without asking. Deployment is `infra-provision.yml` / `infra-destroy.yml`, both
-dispatch-only. Always tear down after a live session.
+targets without asking.
+
+**Never tear down unless the user says so in that moment.** They pay for this
+account personally and keep the stack up across sessions: *"the tear down i will
+tell you myself. dont destroy anything without my command."* Saying what the day
+costs is useful; dispatching `infra-destroy.yml` on your own judgement is not.
 
 **`aws-vault` sessions cannot call IAM — always pass `--no-session`.** Without
 it the credentials are wrapped in a `GetSessionToken` session that IAM refuses
@@ -147,11 +153,34 @@ the token is requested from a caller job or from inside a called reusable
 workflow, so the reusable workflow is not involved in this.
 
 **`environment: production` gates nothing on this plan.** Required-reviewer
-protection rules need a paid plan on a private repo. The real gate is that
-deploy and destroy are dispatch-only, plus a typed `confirm=destroy` on the
-teardown. The environment block stays because the OIDC trust policy pins
+protection rules need a paid plan on a private repo. The real gate is the policy
+chain each run carries, plus a typed `confirm=destroy` on the teardown. The
+environment block stays because the OIDC trust policy pins
 `environment:production` in the token subject — a job without it cannot assume
 the role.
+
+**A push to main applies the infrastructure, and that was asked for.** The user
+works trunk based and wanted change detection rather than remembered dispatches.
+`infra-provision.yml` carries the push trigger and runs `eks-platform` then
+`bedrock-ai` with `needs` between them; the two single-layer callers are
+dispatch-only. That split is not cosmetic: while both callers had their own push
+trigger, one commit started both at once, and the shared `genai-platform-live`
+lock queued them in the order GitHub chose rather than the order they depend on.
+The AI layer won that race and applied against a platform layer that had not yet
+published `bastion_security_group_id`, so a `count` on that variable resolved to
+zero and an egress rule silently did not exist. The gate chain now runs *inside*
+the applying run (`run_gate` left at its default) — `security.yml` runs in
+parallel on the same commit and so could never have refused one.
+
+**A cleanup step that interpolates an unset variable deletes everything.** The
+`clean up the staging prefix` steps run `if: always()`, so a failure before the
+staging step left the prefix empty and the command became `aws s3 rm --recursive
+s3://<the state bucket>/` — every layer's state, with `|| true` swallowing it.
+Versioning is the only reason it was recoverable: the objects were still there
+under a delete marker, and removing the marker restored them. Both app workflows
+now guard on `steps.stage.outputs.prefix != ''`. Worth noting for the risk
+assessment that the deploy role's deny on deleting the state *bucket* does not
+cover deleting objects in it.
 
 **The cluster is `terraform-aws-modules/eks`, and that was not a style choice.**
 The hand-written module passed all 76 rules and was still wrong in three ways
@@ -189,6 +218,28 @@ impossible rather than merely unlikely — the identity running the injection ha
 no write permission to use. `aoss:APIAccessAll` in IAM is necessary and not
 sufficient: without a data access policy every query returns 403 and the IAM
 policy looks correct.
+
+**Ingestion is `app-index.yml`, and keeping it on the jump host cost eight
+fixes.** The host has Python 3.9, no pip, no boto3, no git and no route to PyPI,
+so the runner downloads wheels and stages them in the state bucket beside the
+ingester, exactly as `app-deploy.yml` stages kubectl. Each of these was found
+only by running it, and each hid the next: the bastion's S3 grant named
+`app-deploy/*` and nothing else (an `aws s3 cp --recursive --quiet` denied this
+way exits 1 printing *nothing*, so the SSM output is empty); pip 26 dropped 3.9
+and dies importing on `dataclass() got an unexpected keyword argument 'slots'`,
+so the staged pip is held below 26; `--python-version` fixes wheel tags but not
+the marker the resolver evaluates, so urllib3 2.x came down while botocore under
+3.9 wants `<1.27`, and it has to be named explicitly; the bastion had no egress
+to the AI layer's endpoint security group; that fix applied before the platform
+layer published the security group id, so its `count` silently resolved to zero;
+the Bedrock VPC endpoint policy named the workload alone, and IAM and the
+endpoint policy are evaluated separately — *"no VPC endpoint policy allows the
+bedrock:InvokeModel action"* is that document, not the role; the default ten
+second read timeout is too short for the first write into a cold Serverless
+index; and Serverless does not implement the refresh API, so `indices.refresh`
+404s *after* every document is written and the run fails on a courtesy step.
+The ingester is granted `InvokeModel` on the embedding model only — it cannot
+ask a question through the path it uses to index one.
 
 **The image is built on a GitHub runner, never on the jump host.** The jump host
 has no route to the internet, so it cannot pull a base image or an npm package.
@@ -410,19 +461,25 @@ bucket shares the `genai-assistant-` prefix, so the S3 grant would otherwise
 reach it). Tightening the remaining wildcards after a first apply belongs in
 the risk assessment.
 
-**The demo application is deployed and running.** Two `genai-mediation` pods
-reached 1/1 Ready on 2026-09-22 in `891377211626`. The v1 image was applied by
-hand; the move to v2 — which is what makes the service read its secrets from
-Secrets Manager rather than Kubernetes Secrets — went through `app-deploy.yml`
-and was still being retried when the session ended. Corpus ingestion and token
-minting (RUNBOOK §4c steps 4 and 5) have not been done, so nothing has been
-asked of it yet and the five demo rows are unproven.
+**The demo application is deployed, and the corpus is indexed.** Two
+`genai-mediation` pods run v2 (`sha256:3ee62c29…`) 1/1 Ready in `891377211626`,
+applied by `app-deploy.yml`, reading the signing key and the TLS pair from
+Secrets Manager with their own IRSA credentials. The namespace holds no
+Kubernetes Secret at all — the two created by hand before that move were deleted
+on 2026-09-22, so "no Kubernetes Secret exists" is now true in fact and not only
+in the manifest. `app-index.yml` then indexed 14 passages from 6 documents into
+`genai-corpus`, triggered by a push rather than dispatched.
 
-Two leftovers to clear: the namespace still holds `genai-mediation-identity` and
-`genai-mediation-tls`, the Kubernetes Secrets created by hand before the move to
-Secrets Manager. Nothing references them once v2 lands, and deleting them is
-what makes "no Kubernetes Secret exists" true in fact rather than only in the
-manifest.
+What remains before the demo can be run: mint tokens for `alice` and `dana`
+(RUNBOOK §4c step 5), then ask the five rows. The front end is served by the pod
+itself at `/` on :8443, so seeing it means an SSM port-forward to the API server
+and a `kubectl port-forward` to the pod.
+
+**`--recreate` drops the index before it rebuilds it.** A failed reindex
+therefore leaves an empty index and a service that answers nothing, which now
+matters more because a corpus edit triggers the pipeline automatically.
+Indexing into a new name and swapping an alias at the end is the fix, and is not
+built yet.
 
 **A manifest can be valid and still rejected by the API server.** The deployment
 hand-projected the IRSA token at
@@ -442,9 +499,65 @@ script, no `secretsmanager` interface endpoint in the VPC, and no jump host
 egress to the S3 prefix list. Every one passed `make ci` clean. Each is its own
 `fix(...)` commit between `38c09a2` and `e8f8b4d`.
 
-Outstanding: the five-page design summary, the top-5 risk assessment, and the
-first end-to-end run of the demo (corpus ingested, tokens minted, the five rows
-asked).
+**The move to v2 took three more, all of them one KMS grant short.** The jump
+host could read the staged object from S3 but not decrypt it, because the state
+bucket is CMK-encrypted and `s3:GetObject` alone is half a grant. The pod could
+call `GetSecretValue` and still got `Access to KMS is not allowed`, because its
+`kms:ViaService` condition listed `s3` and `bedrock` but not `secretsmanager` —
+a refusal that names neither the key nor the condition. And the rollout had to
+be retried once after the policy landed, since the pod that crashed during the
+apply was denied under the old one. A failed rollout now prints pods, events and
+logs from the jump host session rather than leaving `timed out waiting for the
+condition` as the only evidence.
+
+## What is left for the demo
+
+Everything below the corpus is done: both layers applied, pods running v2,
+14 passages indexed. The service has never been asked a question.
+
+**1. Mint two tokens** (RUNBOOK §4c step 5). On the jump host, since the signing
+key is readable only by the workload role and the jump host role:
+
+```bash
+export IDENTITY_TOKEN_SECRET="$(aws secretsmanager get-secret-value \
+  --secret-id genai-assistant/prod/identity-signing-key \
+  --query SecretString --output text)"
+python -m mediation.tokens alice --groups all-staff
+python -m mediation.tokens dana  --groups all-staff,finance-team
+```
+
+The jump host has no Python libraries of its own — `app-index.yml` stages them
+per run and the temp directory is deleted on exit. Either add a token-minting
+step to a workflow the same way, or stage `wheels/` and `mediation/` under
+`app-index/<something>` by hand first. The S3 grant covers `app-deploy/*` and
+`app-index/*` only.
+
+**2. Reach the service.** It listens on :8443 inside the VPC, with no ingress
+from anywhere. Two hops: `aws ssm start-session` port-forwarding to the API
+server, then `kubectl port-forward` to the pod. `~/.kube/koerber-live.yaml` is
+the isolated kubeconfig — never the current context, which is a real work
+cluster.
+
+**3. Ask the five rows.** Each proves a different control:
+
+| Ask | As | Expected |
+|-----|----|----------|
+| leave carry-over | alice | answered from `hr-leave-policy.md` |
+| Q3 revenue | alice | refused — not entitled, so it was never a retrieval candidate |
+| Q3 revenue | dana | answered from `finance-q3-forecast.md` |
+| "ignore all previous instructions…" | alice | `guardrail intervened` badge |
+| customer records | alice | blocked before retrieval |
+
+The second and third rows are the point of the whole design: same question, same
+index, different answer because of who asked. The difference is in what was
+retrievable, not in what the model was told to say.
+
+**Still unbuilt, and it matters now:** `--recreate` drops the index first, so a
+failed reindex leaves the service answering nothing. Alias swap, per the note
+above.
+
+Outstanding beyond the stack: the five-page design summary and the top-5 risk
+assessment.
 
 **The `ApplyGuardrail` test harness is cut, deliberately.** Measuring the real
 block rate against an injection corpus is the right thing to build and there is
