@@ -17,7 +17,20 @@
 
 name: app index
 
+# Change detection: the index is derived from the corpus and from the ingester,
+# so a push to main that edits either rebuilds it. Unlike the terraform layers,
+# there is no plan half to stop at -- indexing is the only thing this pipeline
+# does, and a corpus edit that is not indexed is a corpus edit that did nothing.
+#
+# The typed confirmation still guards a hand-dispatched run, where the intent is
+# not visible in a diff.
 on:
+  push:
+    branches: [main]
+    paths:
+      - controls/data/corpus/**
+      - app/mediation/ingest.py
+      - .github/workflows/app-index.yml
   workflow_dispatch:
     inputs:
       confirm:
@@ -57,6 +70,7 @@ jobs:
 
     steps:
       - name: refuse an unconfirmed run
+        if: github.event_name == 'workflow_dispatch'
         run: |
           if [ "${{ inputs.confirm }}" != "index" ]; then
             echo "confirm must be the word index; --recreate drops the existing index" >&2

@@ -259,7 +259,15 @@ def main() -> None:
     if not seen:
         sys.exit("no documents found; nothing was indexed")
 
-    client.indices.refresh(index=args.index)
+    # Serverless does not implement the refresh API and answers 404, after every
+    # document has already been written -- so the run fails on the step that was
+    # only ever a courtesy. It refreshes on its own schedule instead, which is
+    # why a query immediately after this can still come back empty for a few
+    # seconds. The local runtime does implement it, and there the wait is worth
+    # having.
+    if args.provider != "bedrock":
+        client.indices.refresh(index=args.index)
+
     print(f"\nindexed {indexed} passages from {seen} documents into {args.index}")
 
 
