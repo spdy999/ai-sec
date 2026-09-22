@@ -141,6 +141,13 @@ module "endpoints" {
     "ssm",
     "ssmmessages",
     "ec2messages",
+
+    # secretsmanager is reached by both sides of this VPC: the jump host writes
+    # the application's secret material, and the mediation pod reads it at
+    # startup. Without the endpoint neither call fails -- it hangs, until
+    # something upstream times out, which is a much harder failure to read than
+    # an AccessDenied. There is no NAT gateway and no other route.
+    "secretsmanager",
   ]
 
   gateway_route_table_ids = module.network.private_route_table_ids
