@@ -16,11 +16,20 @@ set -euo pipefail
 instance="${1:?instance id required}"
 script_file="${2:?script file required}"
 
+# --parameters takes the CLI's shorthand syntax, which splits on commas and
+# does not survive embedded newlines: the script arrives as one mangled line
+# and bash fails on an unterminated quote. A JSON file avoids the shorthand
+# parser entirely, and is the only form that carries a multi-line script
+# intact.
+params="$(mktemp)"
+trap 'rm -f "${params}"' EXIT
+jq -Rs '{commands: [.]}' <"${script_file}" >"${params}"
+
 command_id="$(aws ssm send-command \
   --instance-ids "${instance}" \
   --document-name AWS-RunShellScript \
   --comment "github ${GITHUB_RUN_ID:-manual}" \
-  --parameters commands="$(jq -Rs '[.]' <"${script_file}")" \
+  --parameters "file://${params}" \
   --query 'Command.CommandId' --output text)"
 
 echo "ssm command ${command_id} on ${instance}"
