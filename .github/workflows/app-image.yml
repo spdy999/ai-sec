@@ -9,7 +9,19 @@
 
 name: app image
 
+# Called by app-release.yml on a push, and dispatchable on its own to rebuild
+# one image without deploying it.
 on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Immutable tag for this build.
+        required: true
+        type: string
+    outputs:
+      digest:
+        description: Digest of the image just pushed. What the deploy pins.
+        value: ${{ jobs.image.outputs.digest }}
   workflow_dispatch:
     inputs:
       tag:
@@ -34,6 +46,9 @@ jobs:
     name: build and push
     runs-on: ubuntu-latest
     timeout-minutes: 30
+
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
 
     # The deploy role's trust policy pins environment:production in the OIDC
     # subject; without this block the job cannot assume it.

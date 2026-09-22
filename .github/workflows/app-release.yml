@@ -1,0 +1,55 @@
+# The application's push path: build the image, then deploy that digest.
+#
+# Why this workflow exists rather than a push trigger on each half: the deploy
+# needs the digest the build produced, and two workflows reacting to the same
+# push cannot pass a value between them. The infra side learned the same lesson
+# the harder way -- both callers took a push, the shared lock queued them in
+# GitHub's order rather than dependency order, and the AI layer applied against
+# a platform layer that had not published its outputs yet.
+#
+# The two called workflows stay dispatchable on their own, for rebuilding or
+# redeploying one piece without the other.
+
+name: app release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - app/**
+      - controls/kubernetes/**
+      - .github/workflows/app-image.yml
+      - .github/workflows/app-deploy.yml
+      - .github/workflows/app-release.yml
+  workflow_dispatch:
+
+# Shares the deploy lock with the single-piece callers, so a hand-run deploy
+# cannot overlap a push-driven one.
+concurrency:
+  group: genai-app-live
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    uses: ./.github/workflows/app-image.yml
+    with:
+      # The commit is the tag. Immutable by construction, and it says which
+      # source built the image without reading the run.
+      tag: ${{ github.sha }}
+    permissions:
+      contents: read
+      id-token: write
+    secrets: inherit
+
+  deploy:
+    needs: [image]
+    uses: ./.github/workflows/app-deploy.yml
+    with:
+      image_digest: ${{ needs.image.outputs.digest }}
+    permissions:
+      contents: read
+      id-token: write
+    secrets: inherit

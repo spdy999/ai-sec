@@ -12,7 +12,15 @@
 
 name: app deploy
 
+# Called by app-release.yml with the digest the build just produced, and
+# dispatchable on its own to redeploy a digest that already exists.
 on:
+  workflow_call:
+    inputs:
+      image_digest:
+        description: "sha256:... published by the app image workflow"
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       image_digest:
