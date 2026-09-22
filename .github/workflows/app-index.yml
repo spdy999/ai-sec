@@ -113,8 +113,11 @@ jobs:
             boto3 opensearch-py requests
 
           # pip itself, because the jump host has none: a wheel is a zip, and
-          # python can run the pip inside it directly.
-          pip download --quiet --dest wheels --only-binary=:all: pip
+          # python can run the pip inside it directly. Held below 26, which
+          # dropped Python 3.9 -- the current one imports and dies on
+          # `dataclass() got an unexpected keyword argument 'slots'`, a 3.10
+          # feature, before it parses a single argument.
+          pip download --quiet --dest wheels --only-binary=:all: 'pip<26'
 
           aws s3 cp --recursive --quiet wheels "s3://${TF_STATE_BUCKET}/${prefix}/wheels"
           aws s3 cp --recursive --quiet --exclude '__pycache__/*' \
