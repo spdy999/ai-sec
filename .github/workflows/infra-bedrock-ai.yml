@@ -5,11 +5,15 @@
 
 name: infra bedrock-ai
 
-# Trunk based: a push to main that touches this layer plans it automatically,
-# against real state and real credentials, and stops there. Nothing reaches the
-# account without someone dispatching apply. The plan is the change detection --
-# it is how a config edit that would destroy a node group is seen before it
-# does.
+# Trunk based: a push to main that touches this layer applies it. The offline
+# gate chain has already run on the same commit in security.yml, and the policy
+# gate runs again here against the saved plan -- the bytes about to be applied,
+# not an offline approximation of them.
+#
+# This layer reads the platform layer's outputs, so a change spanning both wants
+# the platform push to land first; the shared concurrency lock makes them queue
+# rather than interleave, but it does not order them. `plan` remains available
+# by hand.
 on:
   push:
     branches: [main]
@@ -31,12 +35,12 @@ on:
         options: [plan, apply, destroy]
         default: apply
 
-# An apply or a destroy contends for the live account, so both share one lock
-# and queue. A plan changes nothing, so it runs in its own lane and a newer push
-# supersedes an older plan rather than waiting for it.
+# A push applies, so everything but an explicit plan contends for the live
+# account: one lock, and runs queue rather than race. Two applies at once is how
+# a layer ends up half one commit and half another.
 concurrency:
-  group: ${{ (inputs.action == 'apply' || inputs.action == 'destroy') && 'genai-platform-live' || format('genai-plan-{0}', github.workflow) }}
-  cancel-in-progress: ${{ inputs.action != 'apply' && inputs.action != 'destroy' }}
+  group: ${{ inputs.action == 'plan' && format('genai-plan-{0}', github.workflow) || 'genai-platform-live' }}
+  cancel-in-progress: ${{ inputs.action == 'plan' }}
 
 permissions:
   contents: read
@@ -46,10 +50,11 @@ jobs:
     uses: ./.github/workflows/tf-reusable-workflow.yaml
     with:
       layer: bedrock-ai
-      action: ${{ inputs.action || 'plan' }}
-      # security.yml runs the offline gate chain on this same commit already. A
-      # dispatch can arrive on a commit that never saw it, so that path keeps it.
-      run_gate: ${{ github.event_name == 'workflow_dispatch' }}
+      action: ${{ inputs.action || 'apply' }}
+      # Always, now that a push applies. security.yml runs the same chain on the
+      # same commit, but it runs in parallel with this one and so gates nothing:
+      # a failing gate there would not stop an apply here. Duplicated work, and
+      # the duplicate is the one with the power to refuse.
     permissions:
       contents: read
       id-token: write
