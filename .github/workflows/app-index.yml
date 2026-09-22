@@ -107,10 +107,17 @@ jobs:
           # interpreter is not the one that will import these. A source
           # distribution would try to build on a host with no compiler and no
           # network.
+          #
+          # urllib3 is named because --python-version fixes the wheel tags but
+          # not the marker the resolver evaluates: it picks urllib3 2.x here,
+          # while botocore under 3.9 requires <1.27, and the host then fails
+          # with "No matching distribution found" for a dependency nobody asked
+          # for by name. Both versions travel; the host resolves the one its own
+          # marker allows.
           pip download --quiet --dest wheels \
             --only-binary=:all: \
             --python-version "${JUMP_HOST_PYTHON}" \
-            boto3 opensearch-py requests
+            boto3 opensearch-py requests 'urllib3<1.27'
 
           # pip itself, because the jump host has none: a wheel is a zip, and
           # python can run the pip inside it directly. Held below 26, which
