@@ -11,18 +11,37 @@ create for themselves:
 | GitHub OIDC provider | it is what lets the pipeline authenticate at all |
 | deploy role | the role the pipeline assumes |
 
-It keeps **local state**, deliberately — a root that creates the state bucket
-cannot store its state there. Its three resources are created once and never
-change, so losing the state file costs a `terraform import`, not an outage.
+It keeps **remote state**, like the other roots. It can: it runs with a person's
+own admin credentials, not the role it creates, so there is no circularity —
+only an ordering requirement, which is that the bucket has to exist before the
+backend can point at it. `backend.tf` here is the one committed backend file in
+the repository; `.gitignore` carries an explicit exception for it, and for this
+root's `terraform.tfvars`.
 
-## Running it
+## Running it in a fresh account
+
+Two phases, because of that ordering requirement. Skipping the first one gives
+`Failed to get existing workspaces: bucket does not exist`, which reads like a
+credentials problem and is not one.
 
 ```bash
 cd controls/terraform/pipeline-iam
-cp terraform.tfvars.example terraform.tfvars   # fill in bucket name and repo
+
+# terraform.tfvars is committed -- edit it rather than copying the example, and
+# read the note at the top of it about everything else that must agree.
+
+# Phase 1: local state, because the bucket it wants to use is what this creates.
+mv backend.tf backend.tf.off
 terraform init
 terraform apply                                 # needs admin credentials, once
+
+# Phase 2: adopt the bucket it just made.
+mv backend.tf.off backend.tf                    # point it at the new bucket name
+terraform init -migrate-state
 ```
+
+In an account that already has the bucket, phase 1 is unnecessary — set
+`create_state_bucket = false` and `terraform init` straight away.
 
 Then set the two outputs as **repository variables** (Settings → Secrets and
 variables → Actions → Variables):
