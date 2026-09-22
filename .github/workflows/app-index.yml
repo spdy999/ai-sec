@@ -163,11 +163,17 @@ jobs:
           SSM_EXECUTION_TIMEOUT=900 ./.github/scripts/ssm-run.sh \
             "${{ steps.state.outputs.instance }}" /tmp/index.sh
 
+      # The guard is load-bearing, not defensive. An empty prefix makes this
+      # `aws s3 rm --recursive s3://<the state bucket>/` -- every layer's state,
+      # deleted, with `|| true` swallowing the evidence. It happened: the step
+      # runs `if: always()`, so a failure before the staging step left the
+      # variable unset. Versioning is what made it recoverable.
       - name: clean up the staging prefix
-        if: always()
+        if: always() && steps.stage.outputs.prefix != ''
         run: |
+          set -euo pipefail
           aws s3 rm --recursive \
-            "s3://${{ vars.TF_STATE_BUCKET }}/${{ steps.stage.outputs.prefix }}" >/dev/null || true
+            "s3://${{ vars.TF_STATE_BUCKET }}/${{ steps.stage.outputs.prefix }}" >/dev/null
 
       - name: report
         run: |

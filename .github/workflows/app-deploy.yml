@@ -171,11 +171,15 @@ jobs:
 
           ./.github/scripts/ssm-run.sh "${{ steps.render.outputs.instance }}" /tmp/apply.sh
 
+      # Guarded on a non-empty prefix: unset, this deletes the state bucket's
+      # entire contents, because `if: always()` runs it even when the staging
+      # step never set the output. See app-index.yml, where that happened.
       - name: clean up the staging prefix
-        if: always()
+        if: always() && steps.stage.outputs.prefix != ''
         run: |
+          set -euo pipefail
           aws s3 rm --recursive \
-            "s3://${{ vars.TF_STATE_BUCKET }}/${{ steps.stage.outputs.prefix }}" >/dev/null || true
+            "s3://${{ vars.TF_STATE_BUCKET }}/${{ steps.stage.outputs.prefix }}" >/dev/null
 
       - name: report
         run: |
