@@ -192,6 +192,8 @@ module "registry" {
 
   kms_key_arn         = module.encryption.arn
   pull_principal_arns = [module.eks.node_role_arn]
+
+  force_delete = var.ephemeral_environment
 }
 
 # Free, and the difference between a three dollar demo and a four figure

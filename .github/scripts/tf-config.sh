@@ -60,12 +60,14 @@ account_id   = "${account_id}"
 region       = "${region}"
 EOF
 
-# This account exists to be provisioned and torn down again, so the CloudTrail
-# bucket is allowed to be deleted with its object versions still in it. Without
-# it a teardown fails on BucketNotEmpty and stops before the cluster layer,
-# leaving the expensive half of the platform running. A real audit log store
-# should refuse exactly that, which is why the default is false in the module.
-if [ "${key}" = "bedrock-ai" ]; then
+# This account exists to be provisioned and torn down again, so two resources
+# that would otherwise refuse to be deleted are allowed to be: the CloudTrail
+# bucket with its object versions still in it, and the container registry with
+# images still in it. Both defaults are false in their modules, deliberately --
+# an audit log store and a registry holding what production runs *should* refuse
+# a terraform destroy. Here they strand the teardown instead, and a teardown
+# that stops half way leaves the expensive resources running.
+if [ "${key}" = "bedrock-ai" ] || [ "${key}" = "eks-platform" ]; then
   echo "ephemeral_environment = true" >> "${dir}/ci.auto.tfvars"
 fi
 
