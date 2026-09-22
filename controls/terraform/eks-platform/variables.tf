@@ -87,9 +87,9 @@ variable "endpoint_az_count" {
 }
 
 variable "monthly_budget_usd" {
-  description = "Monthly cost ceiling for the whole platform."
+  description = "Monthly cost ceiling for the whole platform. Five dollars against a platform that runs at roughly seventeen a day, deliberately: the forecast thresholds breach on the first day, which proves the notification path works rather than waiting a month to find out it does not."
   type        = number
-  default     = 50
+  default     = 5
 }
 
 variable "cost_alert_emails" {
