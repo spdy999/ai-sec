@@ -82,7 +82,6 @@ jobs:
           set -euo pipefail
           ./.github/scripts/tf-config.sh "$TF_EKS" eks-platform
           ./.github/scripts/tf-config.sh "$TF_AI" bedrock-ai
-          ./.github/scripts/tf-wire.sh
           terraform -chdir="$TF_EKS" init -input=false -no-color >/dev/null
           terraform -chdir="$TF_AI"  init -input=false -no-color >/dev/null
 
