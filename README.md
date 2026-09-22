@@ -26,7 +26,7 @@ controls/terraform/
   bedrock-ai/         root: what code does    - Bedrock, guardrail, corpus, vectors, identity
   modules/            twelve reusable modules, each with its own README
   fixtures/insecure/  deliberately broken config the gate must reject
-controls/policy/      77 Rego rules, applied to Terraform plans AND Kubernetes YAML
+controls/policy/      81 Rego rules, applied to Terraform plans AND Kubernetes YAML
 controls/kubernetes/  base manifests, Kyverno policies, and manifests that must be refused
 app/                  the only custom code: the mediation service and its React front-end
 .github/workflows/    the CI gate chain, mirroring make ci
@@ -44,11 +44,11 @@ it accepts good input.
 
 | Claim | Proof | Command |
 |---|---|---|
-| The AI layer satisfies every rule, offline | 77 rules, 0 violations | `make policy` |
-| The platform layer satisfies every rule | 77 rules against the plan being applied | deploy pipeline, `make policy-plan` |
+| The AI layer satisfies every rule, offline | 81 rules, 0 violations | `make policy` |
+| The platform layer satisfies every rule | 81 rules against the plan being applied | deploy pipeline, `make policy-plan` |
 | The gate refuses insecure infrastructure | 60 violations found in the fixture | `make policy-negative` |
 | The gate refuses insecure workloads | 29 violations found in `bad/` | `make policy-k8s-negative` |
-| No rule is decorative | 73 of 77 rules proven to fire; 4 exempt, each named | `make policy-coverage` |
+| No rule is decorative | 77 of 81 rules proven to fire; 4 exempt, each named | `make policy-coverage` |
 | A real cluster enforces admission | four manifests refused by the API server | `make k8s-demo` |
 | Default-deny egress actually blocks | a packet sent before and after the policy | `make netpol-proof` |
 

@@ -25,7 +25,7 @@ implementation inside an already-approved shape does not need re-approval.
 make demo             # the presentation walkthrough: pass, then fail, then verdict
 make ci               # the gate chain the pipeline enforces
 make plan             # render both Terraform layers to plan.json, offline
-make policy           # both secure layers must pass all 77 rules
+make policy           # both secure layers must pass all 81 rules
 make policy-negative  # the insecure fixture must FAIL; a clean run is itself a failure
 make policy-k8s       # workload manifests must pass
 make policy-k8s-negative  # the bad manifests must FAIL
@@ -36,7 +36,7 @@ make validate         # terraform validate both roots (runs init first)
 make clean            # remove generated plan artefacts
 ```
 
-Running one area rather than all seventy-six rules. There is no per-rule runner,
+Running one area rather than all eighty-one rules. There is no per-rule runner,
 and `conftest --namespace` is a trap here: every rule file is `package main`,
 so `--namespace eks` matches nothing and reports zero failures rather than an
 error. Filter on the message prefix instead:
@@ -75,7 +75,7 @@ controls/terraform/
   modules/            twelve reusable modules, each with its own README
   fixtures/insecure/  deliberately broken config the gate must reject
   pipeline-iam/       root: run by hand - OIDC provider and the role Actions assumes
-controls/policy/      77 Rego rules, applied to Terraform plans AND Kubernetes YAML
+controls/policy/      81 Rego rules, applied to Terraform plans AND Kubernetes YAML
 controls/kubernetes/  base manifests, Kyverno policies, manifests that must be refused,
                       and render.sh which substitutes applied state into them
 controls/data/corpus/ six synthetic markdown documents, uploaded by the bedrock-ai
@@ -653,3 +653,87 @@ summary as a design, not shipped as code. Do not restart it without asking.
 **The demo is budgeted at three minutes.** `make demo` currently runs in about
 13 seconds and prints 47 lines. Anything added to it has to earn its place
 against that.
+
+## Alerting is built; SIEM is design-only
+
+The assignment PDF §2.2 lists Operations as a required section of the design
+summary: *"telemetry, SIEM, detections, alerting, runbooks, availability, usage,
+and cost monitoring"*, and §2.1 wants logging, SIEM and incident response on the
+diagram. §3.1 wants each risk to carry an attack scenario, the affected
+component, the business impact, preventive *and* detective controls, and the
+residual. Alerting was a documentation requirement rather than a build
+requirement — four controls are already demonstrated where two are asked for —
+and it was built anyway, because "detections are designed" is a weaker sentence
+than a deployed alarm.
+
+**`modules/security-alerting`** is a CMK-encrypted SNS topic, a topic policy
+naming `cloudwatch.amazonaws.com` with an `AWS:SourceOwner` condition, an email
+subscription per address, and three metric filter plus alarm pairs:
+`guardrail-interventions` and `authorization-refusals` over the mediation
+telemetry log group, and `bedrock-access-denied` over the trail log group. Each
+is the observable form of a risk — R1, the identity half of R2/R3, and R3's
+detective control. Wired into `bedrock-ai` as `module.alerting`, address passed
+by `tf-config.sh` from `SECURITY_ALERT_EMAIL`, falling back to
+`COST_ALERT_EMAIL`. Outputs `security_alert_topic_arn` and
+`security_alarm_names`.
+
+**Three things about it that are not obvious.** The filters set
+`default_value = 0`, so a quiet period produces a datapoint instead of
+`INSUFFICIENT_DATA` — an alarm with no data reads as healthy. `treat_missing_data`
+is `missing`, not `notBreaching`, for the opposite reason: with a zero on every
+evaluation, absent data means the log group stopped being written to at all.
+And the CMK's key policy now names `cloudwatch.amazonaws.com` alongside
+`cloudtrail.amazonaws.com`, because an alarm publishes to the encrypted topic as
+the service rather than as the account.
+
+**The mediation service had nothing to alarm on for refusals.** A 401 raised an
+`HTTPException` and wrote no event, so a filter for token refusals would have
+matched nothing — the same failure as the guardrail that scanned nothing,
+reproduced in the thing built to detect it. `app/mediation/main.py` now records
+`{"event": "authorization_refused", "reason": ...}` before raising. That is an
+application change, so a push runs `app release` and the pods are replaced —
+which also re-renders `BEDROCK_GUARDRAIL_VERSION` and finally moves them onto
+guardrail version 2, the row-five fix that was set aside.
+
+**Two new rules, 79 to 81.** A platform declaring a guardrail must declare at
+least one alarm with a notification action; and an alarm with no
+`alarm_actions` is refused, because an alarm that tells nobody still counts as
+detection coverage on an audit questionnaire. VIOLATION 37 in the insecure
+fixture is that second shape. Both needed care with unknown values: an action
+pointing at a topic created in the same plan is `after_unknown`, and an empty
+action list renders as `null` rather than `[]`, so `count` has to be guarded by
+`is_array` or the rule is silently undefined against exactly the configuration
+it exists to catch. `make ci` reports "77 of 81 rules proven to reject a
+fixture, 4 exempt".
+
+**`pipeline-iam` needs a manual apply before the next provision.** The deploy
+role had `logs:*` but no CloudWatch alarm or SNS actions at all; they are named
+explicitly in `oidc.tf` now. That root runs with a person's own credentials, so
+a push alone will not pick it up and the provision fails on `AccessDenied` for
+`cloudwatch:PutMetricAlarm`.
+
+**The email subscription needs a human.** AWS sends a confirmation link and
+delivers nothing until it is clicked, while Terraform reports the subscription
+as created. Check with `aws sns list-subscriptions-by-topic` — a subscription
+ARN reading `PendingConfirmation` is an alert nobody receives.
+
+**SIEM stays design-only, deliberately.** AWS sells no product called a SIEM.
+The four candidates: Security Hub, a findings aggregator and CSPM, single-digit
+dollars a month here; GuardDuty, managed threat detection over CloudTrail, VPC
+and DNS, free for thirty days then about $4 per million events, and it would
+fire on the R3 credential-misuse scenario; Security Lake, an OCSF data lake that
+normalises and stores but brings no query tool; and OpenSearch Service, the real
+thing at real cost — a second collection is another OCU baseline and roughly
+doubles the current OpenSearch bill. Not chosen. The zero-cost option that still
+shows the integration is an `aws_cloudwatch_log_subscription_filter` on both log
+groups with `count` on an empty-by-default `siem_destination_arn`. Not built
+either.
+
+**Three documentation gaps remain, all in the vault.** The design summary has no
+Operations section: §3.5 covers telemetry, SIEM and detection, while alerting
+(now deployed), runbooks (`docs/RUNBOOK.md` is never cited), availability, usage
+and cost monitoring are missing — and cost monitoring is a shipped control that
+goes unmentioned. `design-summary.md:158` claims "a log group the SIEM
+subscribes to", which is true of nothing deployed. The risk assessment names no
+affected component and no business impact, both required by §3.1, and R5's
+residual — "nothing alerts on a spike in guardrail blocks" — is now wrong.

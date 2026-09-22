@@ -27,7 +27,7 @@ while editing Terraform or Rego.
 
 ```bash
 make plan             # render both roots to plan.json
-make policy           # both secure layers pass all 77 rules
+make policy           # both secure layers pass all 81 rules
 make policy-negative  # insecure fixture must FAIL (a clean run is a bug)
 make policy-k8s       # workload manifests pass
 make policy-coverage  # every rule fires against a fixture
@@ -421,6 +421,23 @@ Why each wait matters:
 - If step 1 is dispatched while `CLUSTER_ADMIN_ARNS` is unset, the cluster comes
   up with no human admin at all (`bootstrap_cluster_creator_admin_permissions`
   is off) and `kubectl` answers `Unauthorized`. Fixing it means another apply.
+- **The security alert subscription is confirmed by hand, once per rebuild.**
+  The AI layer creates an SNS topic and an email subscription; AWS mails a
+  confirmation link and delivers nothing until it is clicked, while Terraform
+  reports the subscription as created. A green apply is not evidence the alert
+  arrives:
+
+  ```bash
+  aws sns list-subscriptions-by-topic --topic-arn "$(terraform -chdir=controls/terraform/bedrock-ai \
+    output -raw security_alert_topic_arn)" --query 'Subscriptions[].SubscriptionArn'
+  ```
+
+  A value reading `PendingConfirmation` is an alarm nobody receives.
+- **`pipeline-iam` is applied by hand, and it gained permissions.** The deploy
+  role needs `cloudwatch:PutMetricAlarm` and the `sns:` actions for the alerting
+  module. That root runs with a person's own credentials, so a push does not
+  pick it up; apply it before the first provision or the AI layer fails on
+  `AccessDenied`.
 
 ### 7d. The five manual minutes
 
