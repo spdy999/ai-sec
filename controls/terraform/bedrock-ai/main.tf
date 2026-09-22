@@ -11,6 +11,31 @@
 # Read top to bottom, this file is the right half of the architecture diagram.
 ########################################
 
+# Bedrock no longer serves Anthropic models on-demand by bare model ID -- the
+# only supported invocation is through a cross-region inference profile, and
+# IAM authorises that call against two ARNs: the profile in this account, and
+# the foundation model in whichever region the profile routed to. Granting the
+# profile alone produces an AccessDenied that names the model ARN, which is a
+# confusing way to learn this.
+locals {
+  # The profile the service names in modelId. Regional, and in this account.
+  inference_profile_arn = "arn:aws:bedrock:${var.region}:${var.account_id}:inference-profile/${var.chat_model_id}"
+
+  # The same model, in every region the profile is permitted to route to. Only
+  # the chat model is reached this way; the embedding model is called by bare
+  # ID and stays in var.region.
+  chat_model_arns = [
+    for region in var.model_routing_regions :
+    "arn:aws:bedrock:${region}::foundation-model/${local.chat_foundation_model_id}"
+  ]
+
+  # "eu.anthropic.claude-..." names the profile; "anthropic.claude-..." names
+  # the model underneath it, and that is what has to be on the approved list.
+  chat_foundation_model_id = join(".", slice(split(".", var.chat_model_id), 1, length(split(".", var.chat_model_id))))
+
+  embedding_model_arn = "arn:aws:bedrock:${var.region}::foundation-model/${var.embedding_model_id}"
+}
+
 module "encryption" {
   source = "../modules/encryption-key"
 
@@ -105,11 +130,12 @@ data "aws_iam_policy_document" "bedrock_endpoint" {
     ]
 
     resources = concat(
+      local.chat_model_arns,
       [
-        for model_id in var.approved_model_ids :
-        "arn:aws:bedrock:${var.region}::foundation-model/${model_id}"
+        local.inference_profile_arn,
+        local.embedding_model_arn,
+        module.guardrail.guardrail_arn,
       ],
-      [module.guardrail.guardrail_arn],
     )
   }
 }
@@ -143,9 +169,12 @@ module "workload_identity" {
   service_namespace    = var.service_namespace
   service_account_name = var.service_account_name
 
-  approved_model_ids = var.approved_model_ids
-  guardrail_id       = module.guardrail.guardrail_id
-  guardrail_arn      = module.guardrail.guardrail_arn
+  approved_model_ids    = var.approved_model_ids
+  account_id            = var.account_id
+  chat_model_id         = var.chat_model_id
+  model_routing_regions = var.model_routing_regions
+  guardrail_id          = module.guardrail.guardrail_id
+  guardrail_arn         = module.guardrail.guardrail_arn
 
   rag_bucket_arn          = module.rag_documents.arn
   vector_collection_arn   = module.vector_store.arn
@@ -242,7 +271,7 @@ data "aws_iam_policy_document" "ingestion" {
     sid       = "EmbedWithTheApprovedEmbeddingModel"
     effect    = "Allow"
     actions   = ["bedrock:InvokeModel"]
-    resources = ["arn:aws:bedrock:${var.region}::foundation-model/${var.embedding_model_id}"]
+    resources = [local.embedding_model_arn]
   }
 
   statement {

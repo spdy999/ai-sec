@@ -38,6 +38,21 @@ variable "approved_model_ids" {
   type        = list(string)
 }
 
+variable "account_id" {
+  description = "Account that owns the inference profile. A profile ARN is account-qualified; a foundation model ARN is not."
+  type        = string
+}
+
+variable "chat_model_id" {
+  description = "Inference profile the service names in modelId, geography prefix included."
+  type        = string
+}
+
+variable "model_routing_regions" {
+  description = "Regions the inference profile may route to. IAM checks the foundation model ARN in the region that served the request, not the one the profile lives in."
+  type        = list(string)
+}
+
 variable "guardrail_id" {
   description = "Guardrail that must be attached to every model invocation."
   type        = string

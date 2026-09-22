@@ -15,6 +15,20 @@ model_id_from_arn(arn) := id if {
 	id := split(arn, "/")[1]
 }
 
+# Anthropic models on Bedrock are invocable only through a cross-region
+# inference profile, so the ARN the service is granted is a profile rather
+# than a model. "eu.anthropic.claude-sonnet-4-5-20250929-v1:0" carries a
+# geography prefix in front of the model id; strip it and the allow-list
+# applies unchanged. Without this the governance rule inspects nothing and
+# passes -- a new model could be approved by prefixing it.
+model_id_from_arn(arn) := id if {
+	contains(arn, ":inference-profile/")
+	profile_id := split(arn, "/")[1]
+	parts := split(profile_id, ".")
+	count(parts) > 1
+	id := concat(".", array.slice(parts, 1, count(parts)))
+}
+
 deny contains msg if {
 	some resource in lib.typed("aws_iam_policy")
 	document := lib.policy_document(resource, "policy")
@@ -87,5 +101,29 @@ deny contains msg if {
 	msg := sprintf(
 		"model governance: guardrail %s sets PROMPT_ATTACK input strength to %q, expected HIGH",
 		[resource.address, filter.input_strength],
+	)
+}
+
+# Bedrock ARNs in an IAM policy name their own region, independent of the
+# provider. A cross-region inference profile widens the grant to every region
+# it may route to, and each one has to stay inside the residency allow-list --
+# an invocation served outside the EU is a residency breach whether or not the
+# provider is configured correctly.
+deny contains msg if {
+	some resource in lib.typed("aws_iam_policy")
+	document := lib.policy_document(resource, "policy")
+	some statement in lib.statements(document)
+
+	statement.Effect == "Allow"
+	some arn in lib.as_list(statement.Resource)
+	startswith(arn, "arn:aws:bedrock:")
+
+	region := split(arn, ":")[3]
+	region != ""
+	not region in lib.eu_regions
+
+	msg := sprintf(
+		"model governance: %s grants Bedrock access in non-EU region %q",
+		[resource.address, region],
 	)
 }

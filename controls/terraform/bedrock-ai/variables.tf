@@ -138,9 +138,20 @@ variable "embedding_model_id" {
 }
 
 variable "chat_model_id" {
-  description = "Model that answers. Must appear in approved_model_ids."
+  description = "Identifier the service passes to Bedrock as modelId. This is the inference profile, not the bare model: Anthropic models publish inferenceTypesSupported = INFERENCE_PROFILE only, so invoking the foundation model ID directly returns ValidationException. Strip the geography prefix and what remains must appear in approved_model_ids."
   type        = string
-  default     = "anthropic.claude-sonnet-4-5-20250929-v1:0"
+  default     = "eu.anthropic.claude-sonnet-4-5-20250929-v1:0"
+}
+
+variable "model_routing_regions" {
+  description = "Regions a cross-region inference profile may route a request to. The profile ARN is regional, but the foundation model ARNs it reaches are not, and IAM evaluates both -- authorise only the profile and every call fails with AccessDenied that names the model ARN. Every entry must sit inside the residency allow-list."
+  type        = list(string)
+  default = [
+    "eu-central-1",
+    "eu-west-1",
+    "eu-west-3",
+    "eu-north-1",
+  ]
 }
 
 variable "ephemeral_environment" {

@@ -34,6 +34,12 @@ data "aws_iam_policy_document" "trust" {
   }
 }
 
+locals {
+  # "eu.anthropic.claude-..." is the profile; the model underneath it is what
+  # the approved list holds and what the model ARN names.
+  chat_foundation_model_id = join(".", slice(split(".", var.chat_model_id), 1, length(split(".", var.chat_model_id))))
+}
+
 data "aws_iam_policy_document" "mediation" {
   # Approved models only, and only with the guardrail attached. An unguarded
   # call to an approved model is denied by IAM.
@@ -46,10 +52,23 @@ data "aws_iam_policy_document" "mediation" {
       "bedrock:InvokeModelWithResponseStream",
     ]
 
-    resources = [
-      for model_id in var.approved_model_ids :
-      "arn:aws:bedrock:${var.region}::foundation-model/${model_id}"
-    ]
+    # Three ARN shapes for what is one call. Bedrock serves Anthropic models
+    # only through an inference profile, and authorises the request against
+    # both the profile and the foundation model in the region it routed to.
+    resources = concat(
+      [
+        for region in var.model_routing_regions :
+        "arn:aws:bedrock:${region}::foundation-model/${local.chat_foundation_model_id}"
+      ],
+      [
+        "arn:aws:bedrock:${var.region}:${var.account_id}:inference-profile/${var.chat_model_id}",
+      ],
+      [
+        for model_id in var.approved_model_ids :
+        "arn:aws:bedrock:${var.region}::foundation-model/${model_id}"
+        if model_id != local.chat_foundation_model_id
+      ],
+    )
 
     condition {
       test     = "StringEquals"

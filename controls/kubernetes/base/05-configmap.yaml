@@ -22,7 +22,7 @@ data:
   # without a deployment.
   guardrail_version: "1"
 
-  chat_model_id: anthropic.claude-sonnet-4-5-20250929-v1:0
+  chat_model_id: eu.anthropic.claude-sonnet-4-5-20250929-v1:0
   embedding_model_id: amazon.titan-embed-text-v2:0
 
   vector_collection_endpoint: https://000000000000.eu-central-1.aoss.amazonaws.com
