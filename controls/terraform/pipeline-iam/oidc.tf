@@ -200,16 +200,23 @@ data "aws_iam_policy_document" "deploy_infrastructure" {
   # instead and reads the result back. Scoped to the platform's own instances:
   # SendCommand on "*" would let this role run a shell on anything in the
   # account that happens to run an SSM agent.
+  # SendCommand authorises against two resources in one request: the document
+  # and the instance. A single statement carrying the instance tag condition is
+  # denied on the document, which has no such tag -- and the error names the
+  # document, which reads like the document is the problem. Two statements: the
+  # document unconditionally, the instance only when it is the jump host.
   statement {
-    sid    = "RunDeployCommandsOnThePlatformJumpHost"
-    effect = "Allow"
+    sid       = "RunShellScriptDocument"
+    effect    = "Allow"
+    actions   = ["ssm:SendCommand"]
+    resources = ["arn:aws:ssm:${var.region}::document/AWS-RunShellScript"]
+  }
 
-    actions = ["ssm:SendCommand"]
-
-    resources = [
-      "arn:aws:ssm:${var.region}::document/AWS-RunShellScript",
-      "arn:aws:ec2:${var.region}:${var.account_id}:instance/*",
-    ]
+  statement {
+    sid       = "OnThePlatformJumpHostOnly"
+    effect    = "Allow"
+    actions   = ["ssm:SendCommand"]
+    resources = ["arn:aws:ec2:${var.region}:${var.account_id}:instance/*"]
 
     condition {
       test     = "StringEquals"
