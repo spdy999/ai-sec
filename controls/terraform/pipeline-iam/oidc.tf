@@ -166,6 +166,38 @@ data "aws_iam_policy_document" "deploy_infrastructure" {
     resources = ["*"]
   }
 
+  # Applying workload manifests means reaching a private API server, which no
+  # GitHub runner can do. The deploy job sends a command to the jump host
+  # instead and reads the result back. Scoped to the platform's own instances:
+  # SendCommand on "*" would let this role run a shell on anything in the
+  # account that happens to run an SSM agent.
+  statement {
+    sid    = "RunDeployCommandsOnThePlatformJumpHost"
+    effect = "Allow"
+
+    actions = ["ssm:SendCommand"]
+
+    resources = [
+      "arn:aws:ssm:${var.region}::document/AWS-RunShellScript",
+      "arn:aws:ec2:${var.region}:${var.account_id}:instance/*",
+    ]
+
+    condition {
+      test     = "StringEquals"
+      variable = "ssm:resourceTag/Name"
+      values   = ["${var.name_prefix}-prod-bastion"]
+    }
+  }
+
+  # Reading a command's own result carries no such risk, and the command id is
+  # not knowable in advance.
+  statement {
+    sid       = "ReadOwnCommandResults"
+    effect    = "Allow"
+    actions   = ["ssm:GetCommandInvocation", "ssm:ListCommandInvocations"]
+    resources = ["*"]
+  }
+
   # The OpenSearch Serverless VPC endpoint publishes its private DNS through a
   # Route 53 private hosted zone that the service creates and owns. Terraform
   # waits on the endpoint reaching ACTIVE, and the endpoint instead reaches

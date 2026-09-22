@@ -180,6 +180,30 @@ module "workload_identity" {
   vector_collection_arn   = module.vector_store.arn
   telemetry_log_group_arn = module.logging.mediation_log_group_arn
   kms_key_arn             = module.encryption.arn
+
+  secret_arns = [
+    module.app_secrets.identity_signing_key_arn,
+    module.app_secrets.tls_secret_arn,
+  ]
+}
+
+# The signing key and the listener's key pair. Created here, written out of
+# band: see the module header for why no version resource exists.
+module "app_secrets" {
+  source = "../modules/app-secrets"
+
+  name_prefix = var.name_prefix
+  environment = var.environment
+  kms_key_arn = module.encryption.arn
+
+  # The workload reads them. The jump host writes them, and is named here so a
+  # rotation can be verified by reading back what it just wrote.
+  reader_role_arns = [
+    module.workload_identity.role_arn,
+    var.ingestion_role_arn,
+  ]
+
+  ephemeral_environment = var.ephemeral_environment
 }
 
 ########################################
@@ -286,5 +310,25 @@ data "aws_iam_policy_document" "ingestion" {
     effect    = "Allow"
     actions   = ["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"]
     resources = [module.encryption.arn]
+  }
+
+  # The jump host writes the signing key and the listener's key pair, because
+  # it is inside the VPC: the material is generated there and put straight into
+  # Secrets Manager over an endpoint, so it never crosses a CI runner. Write
+  # and describe only -- reading them back is the workload's job, and the
+  # secrets' own resource policy enforces that separately.
+  statement {
+    sid    = "WriteApplicationSecrets"
+    effect = "Allow"
+
+    actions = [
+      "secretsmanager:PutSecretValue",
+      "secretsmanager:DescribeSecret",
+    ]
+
+    resources = [
+      module.app_secrets.identity_signing_key_arn,
+      module.app_secrets.tls_secret_arn,
+    ]
   }
 }

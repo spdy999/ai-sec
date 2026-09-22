@@ -47,3 +47,13 @@ output "chat_model_id" {
   description = "Answering model."
   value       = var.chat_model_id
 }
+
+output "identity_signing_key_secret_arn" {
+  description = "Secret the service reads its token signing key from. The value is written out of band; Terraform never sees it."
+  value       = module.app_secrets.identity_signing_key_arn
+}
+
+output "tls_secret_arn" {
+  description = "Secret holding the mediation listener's certificate and private key."
+  value       = module.app_secrets.tls_secret_arn
+}

@@ -79,6 +79,20 @@ data "aws_iam_policy_document" "mediation" {
 
   # Used by the guardrail test harness to score an injection corpus without
   # invoking a model.
+  # Read at startup, over the VPC endpoint, using the same short-lived IRSA
+  # credentials as everything else. No Kubernetes Secret exists to be read out
+  # of etcd or printed by anyone holding `kubectl get secret -o yaml`.
+  dynamic "statement" {
+    for_each = length(var.secret_arns) > 0 ? [1] : []
+
+    content {
+      sid       = "ReadOwnSecrets"
+      effect    = "Allow"
+      actions   = ["secretsmanager:GetSecretValue"]
+      resources = var.secret_arns
+    }
+  }
+
   statement {
     sid       = "ApplyGuardrail"
     effect    = "Allow"

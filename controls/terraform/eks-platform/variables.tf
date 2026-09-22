@@ -139,3 +139,9 @@ variable "ephemeral_environment" {
   type        = bool
   default     = false
 }
+
+variable "deploy_staging_bucket_arn" {
+  description = "Bucket the app deploy workflow stages rendered manifests and a kubectl binary in. Written by tf-config.sh at deploy time from TF_STATE_BUCKET; empty offline, which leaves the jump host with no S3 grant at all."
+  type        = string
+  default     = ""
+}

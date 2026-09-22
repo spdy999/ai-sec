@@ -179,46 +179,43 @@ everything.
 
 ## 4c. The application
 
-Order matters: the image needs the registry, the manifests need the image
-digest, and the index needs the corpus bucket. All three come from applied
-state.
+Four dispatches, in order. Nothing here is typed against the cluster by hand:
+the image needs the registry, the secrets need the secret containers, the
+manifests need the image digest, and the index needs the corpus bucket, and all
+four come from applied state.
 
 **1. Build and push the image.** Dispatch `app-image.yml` with a tag. It runs on
 a GitHub runner rather than the jump host because the jump host has no route to
 the internet and cannot pull a base image or an npm package. The run summary
 prints the digest; nothing downstream uses the tag.
 
-**2. Create the two Secrets.** Neither is committed, in any form, and neither is
-in Terraform state. Run these once, from the jump host, with the cluster
-context pinned:
+**2. Write the secret material.** Dispatch `app-secrets.yml` with `confirm=rotate`.
 
-```bash
-# Signing key for caller identity tokens. Anyone holding it can mint themselves
-# any group membership.
-kubectl --context <ctx> -n genai-platform create secret generic \
-  genai-mediation-identity \
-  --from-literal=signing_key="$(openssl rand -base64 48)"
+Two values the service needs and no manifest may carry: the key that signs
+caller identity tokens, and the TLS key pair the pod presents on :8443.
+Terraform creates the secret containers in Secrets Manager, CMK-encrypted, and
+deliberately never an `aws_secretsmanager_secret_version` -- a version resource
+puts the plaintext into state, and state is the one artefact of this pipeline
+that holds every attribute of every resource.
 
-# TLS for the pod. Self-signed is correct here: the only client is a
-# port-forward from this same host, and the alternative is an unencrypted
-# bearer token crossing the cluster network.
-openssl req -x509 -newkey rsa:2048 -nodes -days 90 \
-  -subj "/CN=genai-mediation.genai-platform.svc" \
-  -keyout tls.key -out tls.crt
+The generation happens on the jump host, over Session Manager, so the material
+is created inside the VPC and written to Secrets Manager over an endpoint. It
+never exists on a GitHub runner. Rerunning the workflow rotates both; the pods
+pick a rotated value up on restart, which is what step 3 does.
 
-kubectl --context <ctx> -n genai-platform create secret tls \
-  genai-mediation-tls --cert=tls.crt --key=tls.key
-rm -f tls.key tls.crt
-```
+**3. Apply the manifests.** Dispatch `app-deploy.yml` with the digest from step 1.
 
-**3. Render and apply the manifests.** The committed manifests carry synthetic
-identifiers, the same way the Terraform variables do, so the policy gate reads
-the shape that actually ships:
+The runner cannot reach the API server -- it is private, the nodes have no
+public address, and the VPC has no internet gateway. So the runner does what
+only it can: read applied state, render the manifests against it, and run the
+policy gate over the *rendered* output rather than the committed shape, because
+substituting real identifiers is exactly the step that could introduce a
+violation. It then stages the manifests and a `kubectl` binary in the state
+bucket, and sends the jump host a Run Command to fetch and apply them. The
+staging prefix is deleted afterwards whether the apply succeeded or not.
 
-```bash
-IMAGE_DIGEST=sha256:... controls/kubernetes/render.sh
-kubectl --context <ctx> apply -f .rendered/
-```
+`kubectl` crosses that way because the jump host cannot download one: no route
+to dl.k8s.io, and an S3 gateway endpoint is the only egress it has.
 
 **4. Index the corpus.** From the jump host, which is the only principal the
 OpenSearch data access policy grants writes to. The service itself can only
@@ -231,14 +228,21 @@ python -m mediation.ingest \
   --strict --recreate
 ```
 
-**5. Mint a token to ask with.** One per identity you want to demonstrate:
+**5. Mint a token to ask with.** One per identity you want to demonstrate. The
+signing key is the one step 2 wrote, read back from Secrets Manager:
 
 ```bash
-export IDENTITY_TOKEN_SECRET=<the signing key from step 2>
+export IDENTITY_TOKEN_SECRET="$(aws secretsmanager get-secret-value \
+  --secret-id "$(terraform -chdir=controls/terraform/bedrock-ai output -raw identity_signing_key_secret_arn)" \
+  --query SecretString --output text)"
 
 python -m mediation.tokens alice --groups all-staff
 python -m mediation.tokens dana  --groups all-staff finance-team
 ```
+
+Only the workload role and the jump host role can read those secrets: each
+carries a resource policy denying `GetSecretValue` to every other principal,
+which holds even if someone widens an IAM policy later.
 
 ## 5a. Reaching the live platform
 

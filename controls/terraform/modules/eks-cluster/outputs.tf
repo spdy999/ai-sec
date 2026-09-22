@@ -35,3 +35,8 @@ output "oidc_provider_url" {
   description = "OIDC issuer host with no scheme, the form IAM trust conditions require."
   value       = module.eks.oidc_provider
 }
+
+output "cluster_arn" {
+  description = "Cluster ARN, for grants that name the cluster rather than the account."
+  value       = module.eks.cluster_arn
+}

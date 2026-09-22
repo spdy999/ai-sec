@@ -88,3 +88,9 @@ variable "max_session_duration" {
   type        = number
   default     = 3600
 }
+
+variable "secret_arns" {
+  description = "Secrets the service reads at startup -- the identity signing key and its TLS key pair. Listed explicitly rather than by prefix: a wildcard here would let the pod read any future secret in the account."
+  type        = list(string)
+  default     = []
+}

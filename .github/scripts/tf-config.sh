@@ -60,6 +60,13 @@ account_id   = "${account_id}"
 region       = "${region}"
 EOF
 
+# The jump host fetches rendered manifests and a kubectl binary from the state
+# bucket, because it has an S3 gateway endpoint and no route to anything else.
+# Offline the variable is empty, which leaves it with no S3 grant at all.
+if [ "${key}" = "eks-platform" ]; then
+  echo "deploy_staging_bucket_arn = \"arn:aws:s3:::${bucket}\"" >> "${dir}/ci.auto.tfvars"
+fi
+
 # This account exists to be provisioned and torn down again, so two resources
 # that would otherwise refuse to be deleted are allowed to be: the CloudTrail
 # bucket with its object versions still in it, and the container registry with

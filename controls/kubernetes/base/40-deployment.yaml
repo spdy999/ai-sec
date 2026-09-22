@@ -25,7 +25,7 @@ spec:
       serviceAccountName: genai-mediation
 
       # No API token mounted by default. The only token this pod carries is the
-      # projected one below, scoped to STS.
+      # one the pod identity webhook injects, scoped to STS.
       automountServiceAccountToken: false
 
       securityContext:
@@ -111,24 +111,30 @@ spec:
                 configMapKeyRef:
                   name: genai-mediation-config
                   key: identity_token_issuer
-            # The signing key for caller identity tokens. A Secret rather than a
-            # ConfigMap, and never committed: anyone holding it can mint
-            # themselves any group membership.
-            - name: IDENTITY_TOKEN_SECRET
+            # The signing key and the listener's key pair, both read from
+            # Secrets Manager at startup with the pod's own IRSA credentials.
+            # Only the ARNs are here. There is no Kubernetes Secret in this
+            # namespace, so nothing to read out of etcd and nothing for
+            # `kubectl get secret -o yaml` to print.
+            - name: IDENTITY_SECRET_ARN
               valueFrom:
-                secretKeyRef:
-                  name: genai-mediation-identity
-                  key: signing_key
+                configMapKeyRef:
+                  name: genai-mediation-config
+                  key: identity_secret_arn
+            - name: TLS_SECRET_ARN
+              valueFrom:
+                configMapKeyRef:
+                  name: genai-mediation-config
+                  key: tls_secret_arn
 
+          # No aws-token mount here. The EKS pod identity webhook injects its
+          # own at /var/run/secrets/eks.amazonaws.com/serviceaccount, and a
+          # second one at that path is rejected as a duplicate mountPath. The
+          # token's audience and one hour lifetime are asked for on the
+          # ServiceAccount instead.
           volumeMounts:
-            - name: aws-token
-              mountPath: /var/run/secrets/eks.amazonaws.com/serviceaccount
-              readOnly: true
             - name: tmp
               mountPath: /tmp
-            - name: tls
-              mountPath: /etc/mediation-tls
-              readOnly: true
 
           livenessProbe:
             httpGet:
@@ -147,26 +153,12 @@ spec:
             periodSeconds: 10
 
       volumes:
-        # The IRSA token, projected explicitly with an audience of
-        # sts.amazonaws.com and a one hour lifetime. Stolen, it is useless
-        # against the Kubernetes API and expires on its own.
-        - name: aws-token
-          projected:
-            sources:
-              - serviceAccountToken:
-                  path: token
-                  audience: sts.amazonaws.com
-                  expirationSeconds: 3600
-
         # readOnlyRootFilesystem is true, so scratch space is an explicit,
         # memory-backed, size-capped volume rather than a writable container.
+        # The listener's certificate is written here at startup, which is why
+        # it never reaches a disk and does not survive the pod.
         - name: tmp
           emptyDir:
             medium: Memory
             sizeLimit: 64Mi
 
-        # TLS terminates in the pod. "It is inside the VPC" has never been a
-        # reason to carry a bearer token in clear text across a cluster network.
-        - name: tls
-          secret:
-            secretName: genai-mediation-tls

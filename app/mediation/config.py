@@ -75,7 +75,19 @@ TELEMETRY_LOG_GROUP = os.environ.get("TELEMETRY_LOG_GROUP", "")
 # Shared secret for the demo identity tokens. In production this is an OIDC
 # provider's public key and the verification below becomes RS256 against a JWKS
 # endpoint; the claim handling does not change.
-JWT_SECRET = _required("IDENTITY_TOKEN_SECRET")
+#
+# On AWS it comes from Secrets Manager, read with the pod's own IRSA
+# credentials, so no Kubernetes Secret holds it and no manifest can print it.
+# The local provider has no Secrets Manager to read, so it keeps the
+# environment variable -- which is also what the token minting CLI uses.
+IDENTITY_SECRET_ARN = os.environ.get("IDENTITY_SECRET_ARN", "")
+
+if IDENTITY_SECRET_ARN:
+    from mediation import secrets as _secrets
+
+    JWT_SECRET = _secrets.secret_string(IDENTITY_SECRET_ARN, AWS_REGION)
+else:
+    JWT_SECRET = _required("IDENTITY_TOKEN_SECRET")
 JWT_ISSUER = os.environ.get("IDENTITY_TOKEN_ISSUER", "genai-assistant-demo")
 
 TOP_K = int(os.environ.get("RETRIEVAL_TOP_K", "4"))

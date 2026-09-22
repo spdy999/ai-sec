@@ -62,6 +62,8 @@ values = {
     "vector_collection_endpoint": "$(get vector_collection_endpoint "${bedrock}")",
     "vector_index": "$(get vector_index_name "${bedrock}")",
     "telemetry_log_group": "$(get mediation_log_group_name "${bedrock}")",
+    "identity_secret_arn": "$(get identity_signing_key_secret_arn "${bedrock}")",
+    "tls_secret_arn": "$(get tls_secret_arn "${bedrock}")",
 }
 
 path = pathlib.Path(sys.argv[1])

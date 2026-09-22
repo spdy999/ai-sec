@@ -420,3 +420,13 @@ resource "aws_cloudtrail" "toothless" {
     }
   }
 }
+
+# VIOLATION 33: the signing key for caller identity tokens, left on the default
+# aws/secretsmanager key. The console shows "Encryption key: aws/secretsmanager"
+# and reads as encrypted, which it is -- under a key whose policy grants the
+# service, so every principal in the account holding GetSecretValue can read it.
+# Anyone who can read this one can mint themselves any group membership.
+resource "aws_secretsmanager_secret" "signing_key_on_the_default_key" {
+  name        = "genai-insecure/identity-signing-key"
+  description = "HMAC key for caller identity tokens"
+}

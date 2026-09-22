@@ -72,3 +72,18 @@ deny contains msg if {
 		[resource.address],
 	)
 }
+
+# A secret left on the default aws/secretsmanager key is decryptable by every
+# principal in the account that holds secretsmanager:GetSecretValue, because the
+# AWS managed key grants the service rather than a named role. A CMK makes the
+# read path revocable on its own and auditable separately from the secret.
+deny contains msg if {
+	some resource in lib.typed("aws_secretsmanager_secret")
+	object.get(resource, ["values", "kms_key_id"], null) == null
+	not lib.unknown_at(resource.address, ["kms_key_id"])
+
+	msg := sprintf(
+		"encryption: secret %s uses the default aws/secretsmanager key instead of the platform CMK",
+		[resource.address],
+	)
+}

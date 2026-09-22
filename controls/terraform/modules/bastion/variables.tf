@@ -39,3 +39,15 @@ variable "volume_size" {
   type        = number
   default     = 8
 }
+
+variable "deploy_staging_bucket_arn" {
+  description = "Bucket the deploy workflow stages rendered manifests and a kubectl binary in, for this host to fetch over the S3 gateway endpoint. Empty disables the grant, which is correct for a host that is only ever driven by hand."
+  type        = string
+  default     = ""
+}
+
+variable "cluster_arn" {
+  description = "Cluster this host administers. Needed for eks:DescribeCluster, which is what `aws eks update-kubeconfig` calls before kubectl can reach anything."
+  type        = string
+  default     = ""
+}

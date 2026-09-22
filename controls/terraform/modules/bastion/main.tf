@@ -141,3 +141,53 @@ resource "aws_iam_instance_profile" "bastion" {
   name = "${var.name_prefix}-${var.environment}-bastion"
   role = aws_iam_role.bastion.name
 }
+
+# What the host needs to apply a workload the pipeline rendered for it. The
+# runner cannot reach the API server, so it leaves the manifests and a kubectl
+# binary in S3 and sends this host a command; these two grants are the other
+# half of that path.
+#
+# Read only, and only under the staging prefix. This host writes vectors and
+# secrets elsewhere; it has no reason to write to the state bucket, where its
+# own cluster's state lives.
+data "aws_iam_policy_document" "bastion_deploy" {
+  count = var.deploy_staging_bucket_arn != "" ? 1 : 0
+
+  statement {
+    sid       = "FetchStagedDeployArtefacts"
+    effect    = "Allow"
+    actions   = ["s3:GetObject"]
+    resources = ["${var.deploy_staging_bucket_arn}/app-deploy/*"]
+  }
+
+  statement {
+    sid       = "ListTheStagingPrefix"
+    effect    = "Allow"
+    actions   = ["s3:ListBucket"]
+    resources = [var.deploy_staging_bucket_arn]
+
+    condition {
+      test     = "StringLike"
+      variable = "s3:prefix"
+      values   = ["app-deploy/*"]
+    }
+  }
+
+  # update-kubeconfig reads the endpoint and CA from the cluster description.
+  # Without it kubectl has nothing to point at, and the error names the API
+  # server rather than IAM.
+  statement {
+    sid       = "DescribeTheClusterItAdministers"
+    effect    = "Allow"
+    actions   = ["eks:DescribeCluster"]
+    resources = [var.cluster_arn]
+  }
+}
+
+resource "aws_iam_role_policy" "bastion_deploy" {
+  count = var.deploy_staging_bucket_arn != "" ? 1 : 0
+
+  name   = "${var.name_prefix}-${var.environment}-bastion-deploy"
+  role   = aws_iam_role.bastion.id
+  policy = data.aws_iam_policy_document.bastion_deploy[0].json
+}

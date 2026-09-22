@@ -30,3 +30,8 @@ data:
 
   telemetry_log_group: /aws/genai-assistant/prod/mediation
   identity_token_issuer: genai-assistant-demo
+
+  # ARNs, not values. The service reads both at startup with its own IRSA
+  # credentials; a ConfigMap naming a secret is not a secret.
+  identity_secret_arn: arn:aws:secretsmanager:eu-central-1:000000000000:secret:genai-assistant/prod/identity-signing-key
+  tls_secret_arn: arn:aws:secretsmanager:eu-central-1:000000000000:secret:genai-assistant/prod/mediation-tls

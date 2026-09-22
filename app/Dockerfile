@@ -27,6 +27,7 @@ RUN useradd --uid 10001 --create-home --shell /usr/sbin/nologin mediation
 
 COPY --from=deps /install /usr/local
 COPY mediation /app/mediation
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY --from=web /web/dist /app/mediation/static
 
 WORKDIR /app
@@ -36,11 +37,15 @@ USER 10001
 #
 # TLS terminates in the pod, not at an ingress. Traffic between the jump host
 # and this service crosses the cluster network, and "it is inside the VPC" has
-# never been a reason to send a bearer token in clear text. The key pair is
-# mounted from a Secret; see docs/RUNBOOK.md for how it is created.
+# never been a reason to send a bearer token in clear text.
+#
+# The key pair is fetched from Secrets Manager by entrypoint.sh, using the
+# pod's own IRSA credentials, and written to the memory-backed /tmp. No
+# Kubernetes Secret holds it, so it is not in etcd and not printable from a
+# manifest. The --ssl-* flags are appended there rather than here, because
+# without a TLS_SECRET_ARN (the local provider) there is no certificate to
+# point at and uvicorn must start plain.
 EXPOSE 8443
 
-ENTRYPOINT ["uvicorn", "mediation.main:app", \
-  "--host", "0.0.0.0", "--port", "8443", \
-  "--ssl-keyfile", "/etc/mediation-tls/tls.key", \
-  "--ssl-certfile", "/etc/mediation-tls/tls.crt"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["uvicorn", "mediation.main:app", "--host", "0.0.0.0", "--port", "8443"]
