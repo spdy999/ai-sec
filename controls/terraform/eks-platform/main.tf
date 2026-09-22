@@ -183,6 +183,24 @@ resource "aws_vpc_security_group_ingress_rule" "cluster_from_bastion" {
   ip_protocol                  = "tcp"
 }
 
+# The same omission that kept the nodes NotReady, one security group over. The
+# gateway endpoint puts an S3 route in the route table, but a route is not a
+# permission: without this rule the packet leaves and nothing comes back, so
+# every S3 call from this host hangs until its connect timeout rather than
+# failing with anything that names the cause.
+#
+# The deploy pipeline stages rendered manifests and a kubectl binary in S3 for
+# this host to fetch, so this rule is what makes that path work at all.
+resource "aws_vpc_security_group_egress_rule" "bastion_to_s3" {
+  security_group_id = module.bastion.security_group_id
+  description       = "HTTPS to S3 through the gateway endpoint, for staged deploy artefacts"
+
+  prefix_list_id = var.s3_prefix_list_id
+  from_port      = 443
+  to_port        = 443
+  ip_protocol    = "tcp"
+}
+
 resource "aws_vpc_security_group_egress_rule" "bastion_to_nodes" {
   security_group_id = module.bastion.security_group_id
   description       = "kubectl port-forward reaches the pod through the kubelet"
