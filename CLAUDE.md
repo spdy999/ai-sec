@@ -596,7 +596,8 @@ end the pod serves at `/` on :8443. Four of the five rows behave as designed:
 | "ignore all previous instructions…" | alice | guardrail intervened; "blocked by the Korber AI security guardrail" |
 | customer records | alice | the model declined; the guardrail did not fire |
 
-Row five was fixed after that run: see below.
+Row five was fixed in the guardrail after that run, then set aside for the
+demo: four rows already carry the story, so the fifth is cosmetic. See below.
 
 Rows two and three back to back are the point of the design: same question, same
 index, different answer, and the difference is in what was retrievable rather
@@ -612,19 +613,36 @@ records.md` is `support-team` only, so for `alice` it is never a retrieval
 candidate, nothing is there to mask, and the model's own refusal was all that
 answered. `customer-and-payment-data` now sits alongside `credential-disclosure`
 in `modules/bedrock-guardrail`, and a denied topic is evaluated on the input, so
-the request is refused whether or not the document was retrievable. Committed,
-**not yet applied** — it needs a `bedrock-ai` apply, which creates a new
-guardrail version, and the pod's `GUARDRAIL_VERSION` moves with it.
+the request is refused whether or not the document was retrievable. Applied on
+2026-09-23, which created guardrail version 2 — but the push touched no
+application file, so `app release` never ran and the pods stay rendered against
+version 1. The user then set the row aside as cosmetic, so the redeploy was not
+run. To pick it up: dispatch `app deploy` with the current digest, which
+re-renders `BEDROCK_GUARDRAIL_VERSION` from applied state.
 
 **Still unbuilt, and it matters:** `--recreate` drops the index before it
 rebuilds it, so a failed reindex leaves the service answering nothing, and a
 corpus edit now triggers that automatically. Index into a new name and swap an
 alias at the end.
 
-Outstanding beyond the stack: the five-page design summary and the top-5 risk
-assessment. Both have more material than they did — the guardrail that scanned
-nothing is the strongest single finding in the build, and the deploy role's deny
-on deleting the state bucket still does not cover deleting objects in it.
+**Both written deliverables are drafted**, in the vault's `Assignment/` folder
+rather than the repo: `design-summary.md` (about five pages — threat model, four
+trust boundaries, five controls with the guardrail finding as the centrepiece,
+what was deployed and proven, trade-offs) and `risk-assessment.md` (five risks,
+each with evidence, controls, detection, residual and actions; index rebuild
+noted below the five as availability). Neither is reviewed yet.
+
+`Slides.md` in the same folder is a 478-line Marp deck written before the live
+deployment. It still says nothing is deployed and costs $0, and demos PII
+masking and a tool allow-list that were never built. Reconciling it with the two
+documents is the next job.
+
+**Teardown and rebuild is written down** — RUNBOOK §7: what survives a destroy,
+the emptiness check, the rebuild chain `infra-provision` → `app-secrets` →
+`app-release` → `app-index` with the reason for each wait, and the manual five
+minutes. Roughly 5 minutes down, 25-30 back up, plus 5 by hand. §4b's old
+"always tear down after a live session" line is gone; it contradicted the
+standing rule.
 
 
 **The `ApplyGuardrail` test harness is cut, deliberately.** Measuring the real
