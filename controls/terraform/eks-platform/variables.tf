@@ -145,3 +145,9 @@ variable "deploy_staging_bucket_arn" {
   type        = string
   default     = ""
 }
+
+variable "deploy_staging_kms_key_arn" {
+  description = "CMK encrypting the staging bucket. Written by tf-config.sh at deploy time from TF_STATE_KMS_KEY_ARN; empty offline."
+  type        = string
+  default     = ""
+}

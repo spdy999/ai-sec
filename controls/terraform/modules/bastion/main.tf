@@ -173,6 +173,21 @@ data "aws_iam_policy_document" "bastion_deploy" {
     }
   }
 
+  # A read grant on an SSE-KMS object is two grants. Without this one the
+  # GetObject above returns AccessDenied naming kms:Decrypt on a key id, which
+  # reads as a key policy problem and is not one -- the state key carries the
+  # default policy, so the identity policy is the only place it can be allowed.
+  dynamic "statement" {
+    for_each = var.deploy_staging_kms_key_arn != "" ? [var.deploy_staging_kms_key_arn] : []
+
+    content {
+      sid       = "DecryptStagedDeployArtefacts"
+      effect    = "Allow"
+      actions   = ["kms:Decrypt"]
+      resources = [statement.value]
+    }
+  }
+
   # update-kubeconfig reads the endpoint and CA from the cluster description.
   # Without it kubectl has nothing to point at, and the error names the API
   # server rather than IAM.

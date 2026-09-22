@@ -51,3 +51,9 @@ variable "cluster_arn" {
   type        = string
   default     = ""
 }
+
+variable "deploy_staging_kms_key_arn" {
+  description = "CMK the staging bucket is encrypted with. S3 refuses GetObject on an SSE-KMS object unless the caller may also decrypt with the key, and the error names kms:Decrypt rather than the object, so the S3 grant on its own looks correct right up until it is used. Empty disables the grant with the rest of the deploy path."
+  type        = string
+  default     = ""
+}

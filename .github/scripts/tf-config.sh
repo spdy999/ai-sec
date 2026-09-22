@@ -65,6 +65,13 @@ EOF
 # Offline the variable is empty, which leaves it with no S3 grant at all.
 if [ "${key}" = "eks-platform" ]; then
   echo "deploy_staging_bucket_arn = \"arn:aws:s3:::${bucket}\"" >> "${dir}/ci.auto.tfvars"
+
+  # The bucket is CMK-encrypted, so reading from it needs kms:Decrypt as well
+  # as s3:GetObject. Empty when the bucket was made elsewhere with an AWS
+  # managed key, which needs no grant.
+  if [ -n "${TF_STATE_KMS_KEY_ARN:-}" ]; then
+    echo "deploy_staging_kms_key_arn = \"${TF_STATE_KMS_KEY_ARN}\"" >> "${dir}/ci.auto.tfvars"
+  fi
 fi
 
 # This account exists to be provisioned and torn down again, so two resources

@@ -91,8 +91,9 @@ module "bastion" {
   # The other half of the deploy path: the runner stages manifests and a
   # kubectl binary here, this host fetches them over the S3 gateway endpoint
   # and applies them. Empty in an offline plan, which disables the grant.
-  deploy_staging_bucket_arn = var.deploy_staging_bucket_arn
-  cluster_arn               = module.eks.cluster_arn
+  deploy_staging_bucket_arn  = var.deploy_staging_bucket_arn
+  deploy_staging_kms_key_arn = var.deploy_staging_kms_key_arn
+  cluster_arn                = module.eks.cluster_arn
 }
 
 # The only route out of the VPC. These services are what a node needs in
