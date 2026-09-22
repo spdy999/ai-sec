@@ -28,45 +28,54 @@ def embed(text: str) -> list[float]:
     return json.loads(response["body"].read())["embedding"]
 
 
-def generate(prompt: str) -> dict:
-    """Invoke the approved model behind the guardrail.
+def generate(system: str, context: str, question: str) -> dict:
+    """Ask the approved model, behind the guardrail.
 
-    `guardrailIdentifier` is not a convenience. The IRSA policy conditions
-    `bedrock:InvokeModel` on `bedrock:GuardrailIdentifier`, so an unguarded call
-    from this pod is refused by IAM before it reaches Bedrock. Removing the
-    argument does not quietly weaken the service, it stops it working.
+    Converse rather than InvokeModel, and the question in its own guardContent
+    block, because that block is the only way to tell Bedrock which part of the
+    prompt is untrusted. The PROMPT_ATTACK filter is applied to marked user
+    input and to nothing else: send the whole prompt as one string and the
+    guardrail runs, reports zero policy units, and returns
+    `amazon-bedrock-guardrailAction: NONE` on an injection it blocks perfectly
+    well through ApplyGuardrail. The refusal the caller then sees is the
+    model's own good judgement, which is not a control.
+
+    The passages stay outside the block on purpose. One of them is a planted
+    injection, and scanning quoted documents would block the corpus rather than
+    the caller.
+
+    `guardrailConfig` is not a convenience: the IRSA policy conditions
+    `bedrock:InvokeModel` on `bedrock:GuardrailIdentifier`, so an unguarded
+    call from this pod is refused by IAM before it reaches Bedrock.
     """
-    response = _bedrock.invoke_model(
+    response = _bedrock.converse(
         modelId=config.CHAT_MODEL_ID,
-        guardrailIdentifier=config.GUARDRAIL_ID,
-        guardrailVersion=config.GUARDRAIL_VERSION,
-        trace="ENABLED",
-        body=json.dumps(
+        system=[{"text": system}],
+        messages=[
             {
-                "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": 800,
-                "temperature": 0,
-                "messages": [{"role": "user", "content": prompt}],
-                # Without this the tags in the prompt are literal text and the
-                # prompt-attack filter is never applied to anything.
-                "amazon-bedrock-guardrailConfig": {"tagSuffix": config.GUARD_TAG},
+                "role": "user",
+                "content": [
+                    {"text": context},
+                    {"guardContent": {"text": {"text": question, "qualifiers": ["guard_content"]}}},
+                ],
             }
-        ),
+        ],
+        guardrailConfig={
+            "guardrailIdentifier": config.GUARDRAIL_ID,
+            "guardrailVersion": config.GUARDRAIL_VERSION,
+            "trace": "enabled",
+        },
+        inferenceConfig={"maxTokens": 800, "temperature": 0},
     )
 
-    payload = json.loads(response["body"].read())
-
-    # Bedrock replaces the model's output with its own when the guardrail
-    # intervenes, and says so in amazon-bedrock-guardrailAction.
-    intervened = payload.get("amazon-bedrock-guardrailAction") == "INTERVENED"
-
-    blocks = payload.get("content", [])
-    text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
+    stop_reason = response.get("stopReason")
+    blocks = response.get("output", {}).get("message", {}).get("content", [])
+    text = "".join(block.get("text", "") for block in blocks)
 
     return {
         "text": text or "The guardrail blocked this response.",
-        "guardrail_intervened": intervened,
-        "stop_reason": payload.get("stop_reason"),
+        "guardrail_intervened": stop_reason == "guardrail_intervened",
+        "stop_reason": stop_reason,
     }
 
 

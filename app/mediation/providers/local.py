@@ -48,7 +48,7 @@ def embed(text: str) -> list[float]:
     return response.json()["embedding"]
 
 
-def generate(prompt: str) -> dict:
+def generate(system: str, context: str, question: str) -> dict:
     """Ask the guard service, which is the only route to the model.
 
     Note what is *not* here: no Ollama chat endpoint. The mediation pod cannot
@@ -56,6 +56,8 @@ def generate(prompt: str) -> dict:
     to nothing else. Pointing this function at the model directly would not
     weaken the guardrail quietly, it would fail to connect.
     """
+    prompt = f"{system}\n\n{context}\n\nQuestion: {question}"
+
     response = requests.post(
         f"{config.GUARD_ENDPOINT}/generate",
         json={"prompt": prompt},

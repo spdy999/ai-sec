@@ -91,11 +91,3 @@ else:
 JWT_ISSUER = os.environ.get("IDENTITY_TOKEN_ISSUER", "genai-assistant-demo")
 
 TOP_K = int(os.environ.get("RETRIEVAL_TOP_K", "4"))
-
-# Bedrock evaluates its prompt-attack filter only on text the caller marks as
-# user input. Untagged, a guardrail carrying PROMPT_ATTACK at HIGH reads the
-# whole prompt as trusted and never fires: the model's own refusal is then all
-# that stands between an injection and an answer, and the response says
-# `guardrail_intervened: false` while looking perfectly safe. The suffix is
-# arbitrary; it only has to match on both halves of the call.
-GUARD_TAG = "question"
