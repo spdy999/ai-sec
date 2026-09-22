@@ -138,9 +138,18 @@ data "aws_iam_policy_document" "bedrock_endpoint" {
       "bedrock:ApplyGuardrail",
     ]
 
+    # The chat model carries a wildcard region, and only here. An endpoint is a
+    # regional object and does not match a resource ARN from another region --
+    # naming all six the profile routes to is accepted at write time and still
+    # refuses the call, with "no VPC endpoint policy allows the
+    # bedrock:InvokeModel action" naming a region the request never chose. The
+    # endpoint therefore pins which model may be reached through this network
+    # path; which regions it may run in stays pinned in IAM, where the condition
+    # is evaluated in the account rather than at the endpoint.
     resources = concat(
       local.chat_model_arns,
       [
+        "arn:aws:bedrock:*::foundation-model/${local.chat_foundation_model_id}",
         local.inference_profile_arn,
         local.embedding_model_arn,
         module.guardrail.guardrail_arn,
