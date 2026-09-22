@@ -91,7 +91,11 @@ app/                  the only custom code: mediation service (FastAPI) and its
                       app-image.yml builds and pushes the mediation image;
                       app-secrets.yml generates the secret material on the jump
                       host; app-deploy.yml renders, gates and applies the
-                      manifests; app-index.yml builds the vector index
+                      manifests; app-index.yml builds the vector index;
+                      app-release.yml is the push path for the application --
+                      it calls app-image then app-deploy with the digest
+                      between them, and is the only app workflow a push
+                      triggers; app-tokens.yml mints demo tokens (see below)
 .github/scripts/      backend + tfvars generation and cross-root wiring for deploy
 docs/RUNBOOK.md       operational how-to: prereqs, offline loop, live cluster,
                       real AWS apply/destroy order, demo, troubleshooting
@@ -240,6 +244,68 @@ index; and Serverless does not implement the refresh API, so `indices.refresh`
 404s *after* every document is written and the run fails on a courtesy step.
 The ingester is granted `InvokeModel` on the embedding model only — it cannot
 ask a question through the path it uses to index one.
+
+**A guardrail can be attached, configured, and scanning nothing.** The
+guardrail carried PROMPT_ATTACK at HIGH and every injection still came back
+`guardrail_intervened: false`, answered by the model's own refusal -- which
+reads like the control working and is not a control at all. Bedrock applies the
+prompt-attack filter only to input the caller marks as untrusted, and
+`InvokeModel` with the Anthropic Messages body ignores the guardContent tags
+entirely: the trace returns with a processing latency set, every policy unit
+zero, and `amazon-bedrock-guardrailAction: NONE`. The same text through
+`ApplyGuardrail` comes back `BLOCKED` at HIGH confidence, which is how to tell a
+misconfigured guardrail from an unapplied one. `Converse`, with the question in
+its own `guardContent` block, is what works -- so `providers.generate` takes the
+system prompt, the passages and the question as three arguments rather than one
+string. The passages stay outside the block deliberately: one of them is a
+planted injection, and scanning quoted documents would block the corpus rather
+than the caller.
+
+**Three IAM shapes were wrong in ways only a real question could find**, each in
+code that passed every gate and applied cleanly. The workload could not embed at
+all: the model grant is conditioned on `bedrock:GuardrailIdentifier`, an
+embedding call carries no guardrail, so the condition could never match --
+embeddings now have their own statement, on the embedding model alone.
+`bedrock:GuardrailIdentifier` is now matched against the id, the ARN, and the
+ARN with a version suffix, OR-ed, because which form Bedrock puts in the request
+context is not visible from a refusal that names the model and says nothing
+about the condition that failed. And a VPC endpoint policy will not match a
+foreign-region model ARN: naming all six regions the profile routes to is
+accepted at write time and still refuses the call. The endpoint now pins which
+model may be reached, with a wildcard region; which regions it may run in stays
+pinned in IAM, where the account evaluates it.
+
+**The EU inference profile routes to six regions, and two were not enabled.**
+`aws bedrock get-inference-profile` lists eu-central-1, eu-west-1, eu-west-3,
+eu-north-1, eu-south-1 and eu-south-2; the configuration named four. eu-south-1
+and eu-south-2 are opt-in regions this account did not have, so every request
+routed there failed. Both were enabled on 2026-09-23 with `aws account
+enable-region` -- a few minutes, no cost. There is no single-region Anthropic
+fallback: every Anthropic model in eu-central-1 is `INFERENCE_PROFILE` only,
+every current EU profile spans the same six regions, and the on-demand models in
+eu-central-1 are all open-weight.
+
+**Demo tokens are minted inside the pod, not on the jump host.** The signing
+key's resource policy names the workload role and the ingestion role and denies
+every other principal, so a laptop holding administrator credentials cannot read
+it. The jump host is a named reader but its own IAM policy is deliberately
+`PutSecretValue` and `DescribeSecret` only -- `app-tokens.yml` was built before
+that was noticed and fails on `GetSecretValue`. The working path needs no new
+permission: `kubectl exec` into the pod, which already holds boto3, PyJWT and
+the only credentials that can read the key, and sign there. `tokens.py` now
+falls back to `IDENTITY_SECRET_ARN` when `IDENTITY_TOKEN_SECRET` is unset, so
+`python -m mediation.tokens alice --groups all-staff` works in the pod.
+
+**Reaching the service from a laptop takes two hops and three kubectl flags.**
+`aws ssm start-session` with `AWS-StartPortForwardingSessionToRemoteHost`, the
+API server's hostname, port 443, local port 6443; then kubectl against
+`--server https://127.0.0.1:6443` with `--tls-server-name <API server hostname>`,
+because the certificate is issued for that name and not for localhost.
+`~/.kube/koerber-live.yaml` holds the context and `spdy999` has an access entry.
+Then `kubectl port-forward deploy/genai-mediation 8443:8443`, and the front end
+is at `https://127.0.0.1:8443/`, self-signed. A deploy replaces the pods and
+silently kills the port-forward; restart it rather than debugging the empty
+response.
 
 **The image is built on a GitHub runner, never on the jump host.** The jump host
 has no route to the internet, so it cannot pull a base image or an npm package.
@@ -461,19 +527,14 @@ bucket shares the `genai-assistant-` prefix, so the S3 grant would otherwise
 reach it). Tightening the remaining wildcards after a first apply belongs in
 the risk assessment.
 
-**The demo application is deployed, and the corpus is indexed.** Two
-`genai-mediation` pods run v2 (`sha256:3ee62c29…`) 1/1 Ready in `891377211626`,
-applied by `app-deploy.yml`, reading the signing key and the TLS pair from
-Secrets Manager with their own IRSA credentials. The namespace holds no
-Kubernetes Secret at all — the two created by hand before that move were deleted
-on 2026-09-22, so "no Kubernetes Secret exists" is now true in fact and not only
-in the manifest. `app-index.yml` then indexed 14 passages from 6 documents into
-`genai-corpus`, triggered by a push rather than dispatched.
-
-What remains before the demo can be run: mint tokens for `alice` and `dana`
-(RUNBOOK §4c step 5), then ask the five rows. The front end is served by the pod
-itself at `/` on :8443, so seeing it means an SSM port-forward to the API server
-and a `kubectl port-forward` to the pod.
+**The demo application is deployed, the corpus is indexed, and the service has
+been asked real questions.** Two `genai-mediation` pods run 1/1 Ready in
+`891377211626`, reading the signing key and the TLS pair from Secrets Manager
+with their own IRSA credentials. The namespace holds no Kubernetes Secret at all
+— the two created by hand before that move were deleted on 2026-09-22, so "no
+Kubernetes Secret exists" is now true in fact and not only in the manifest.
+`app-index.yml` indexed 14 passages from 6 documents into `genai-corpus`, and
+the five demo rows were run end to end on 2026-09-23 — see "The demo runs".
 
 **`--recreate` drops the index before it rebuilds it.** A failed reindex
 therefore leaves an empty index and a service that answers nothing, which now
@@ -510,54 +571,43 @@ apply was denied under the old one. A failed rollout now prints pods, events and
 logs from the jump host session rather than leaving `timed out waiting for the
 condition` as the only evidence.
 
-## What is left for the demo
+## The demo runs
 
-Everything below the corpus is done: both layers applied, pods running v2,
-14 passages indexed. The service has never been asked a question.
+Asked and answered on 2026-09-23, against the live account, through the front
+end the pod serves at `/` on :8443. Four of the five rows behave as designed:
 
-**1. Mint two tokens** (RUNBOOK §4c step 5). On the jump host, since the signing
-key is readable only by the workload role and the jump host role:
-
-```bash
-export IDENTITY_TOKEN_SECRET="$(aws secretsmanager get-secret-value \
-  --secret-id genai-assistant/prod/identity-signing-key \
-  --query SecretString --output text)"
-python -m mediation.tokens alice --groups all-staff
-python -m mediation.tokens dana  --groups all-staff,finance-team
-```
-
-The jump host has no Python libraries of its own — `app-index.yml` stages them
-per run and the temp directory is deleted on exit. Either add a token-minting
-step to a workflow the same way, or stage `wheels/` and `mediation/` under
-`app-index/<something>` by hand first. The S3 grant covers `app-deploy/*` and
-`app-index/*` only.
-
-**2. Reach the service.** It listens on :8443 inside the VPC, with no ingress
-from anywhere. Two hops: `aws ssm start-session` port-forwarding to the API
-server, then `kubectl port-forward` to the pod. `~/.kube/koerber-live.yaml` is
-the isolated kubeconfig — never the current context, which is a real work
-cluster.
-
-**3. Ask the five rows.** Each proves a different control:
-
-| Ask | As | Expected |
-|-----|----|----------|
+| Ask | As | Result |
+|-----|----|--------|
 | leave carry-over | alice | answered from `hr-leave-policy.md` |
-| Q3 revenue | alice | refused — not entitled, so it was never a retrieval candidate |
-| Q3 revenue | dana | answered from `finance-q3-forecast.md` |
-| "ignore all previous instructions…" | alice | `guardrail intervened` badge |
-| customer records | alice | blocked before retrieval |
+| Q3 revenue | alice | "no information in the passages" — the finance document was never a retrieval candidate |
+| Q3 revenue | dana | EUR 14.2M against a plan of 13.5M, from `finance-q3-forecast.md` |
+| "ignore all previous instructions…" | alice | guardrail intervened; "blocked by the Korber AI security guardrail" |
+| customer records | alice | the model declined; the guardrail did not fire |
 
-The second and third rows are the point of the whole design: same question, same
-index, different answer because of who asked. The difference is in what was
-retrievable, not in what the model was told to say.
+Rows two and three back to back are the point of the design: same question, same
+index, different answer, and the difference is in what was retrievable rather
+than in what the model was told to say. The badge on row two reads "guardrail
+passed" and that is correct — nothing in the question is an attack, so the
+guardrail evaluated it and found nothing. The control doing the work there is
+entitlement filtering, visible in the Sources line.
 
-**Still unbuilt, and it matters now:** `--recreate` drops the index first, so a
-failed reindex leaves the service answering nothing. Alias swap, per the note
-above.
+**Row five is honest and weak.** Asking for customer records is not a prompt
+attack, and the PII filters mask PII that is present rather than refusing a
+request for it — there is none in the corpus, so nothing trips and the model's
+own refusal is all that answers. Either add a denied topic covering customer and
+payment data, alongside `credential-disclosure`, or replace the row with
+something the guardrail owns. Not decided.
+
+**Still unbuilt, and it matters:** `--recreate` drops the index before it
+rebuilds it, so a failed reindex leaves the service answering nothing, and a
+corpus edit now triggers that automatically. Index into a new name and swap an
+alias at the end.
 
 Outstanding beyond the stack: the five-page design summary and the top-5 risk
-assessment.
+assessment. Both have more material than they did — the guardrail that scanned
+nothing is the strongest single finding in the build, and the deploy role's deny
+on deleting the state bucket still does not cover deleting objects in it.
+
 
 **The `ApplyGuardrail` test harness is cut, deliberately.** Measuring the real
 block rate against an injection corpus is the right thing to build and there is
