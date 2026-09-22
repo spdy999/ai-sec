@@ -1,0 +1,169 @@
+# Mint the demo identity tokens.
+#
+# The service has no login page and no identity provider: it reads a bearer
+# token, verifies its signature, and filters retrieval by the groups the token
+# asserts. In production an IdP issues that token after a real login; here
+# `mediation/tokens.py` is the stand-in, and this workflow is how it runs.
+#
+# It runs on the jump host for the same reason app-secrets.yml does: the signing
+# key's resource policy names the workload role and the jump host role and
+# nobody else, so no runner and no laptop can read it. The runner's part is only
+# to carry the one library the host cannot download.
+#
+# The tokens print in the run log. They are bearer credentials -- short-lived by
+# default, and a run whose output has expired is worth deleting anyway.
+
+name: app tokens
+
+# Dispatch only. Nothing in the repository decides when a demo needs a fresh
+# token, so there is no change to detect.
+on:
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: How long the tokens stay valid.
+        required: false
+        default: "120"
+        type: string
+
+concurrency:
+  group: genai-app-tokens
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: eu-central-1
+  TF_VERSION: "1.14.8"
+  TF_EKS: controls/terraform/eks-platform
+  TF_AI: controls/terraform/bedrock-ai
+
+  # Amazon Linux 2023's system python, which is what will import the wheel.
+  JUMP_HOST_PYTHON: "3.9"
+
+jobs:
+  mint:
+    name: mint on the jump host
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    environment:
+      name: production
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-tokens-${{ github.run_id }}
+
+      - name: read the jump host and the signing key from applied state
+        id: state
+        run: |
+          set -euo pipefail
+          ./.github/scripts/tf-config.sh "$TF_EKS" eks-platform
+          ./.github/scripts/tf-config.sh "$TF_AI" bedrock-ai
+          terraform -chdir="$TF_EKS" init -input=false -no-color >/dev/null
+          terraform -chdir="$TF_AI"  init -input=false -no-color >/dev/null
+
+          {
+            echo "instance=$(terraform -chdir="$TF_EKS" output -raw bastion_instance_id)"
+            echo "secret=$(terraform -chdir="$TF_AI" output -raw identity_signing_key_secret_arn)"
+          } >> "$GITHUB_OUTPUT"
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          TF_STATE_REGION: ${{ vars.TF_STATE_REGION }}
+          TF_STATE_KMS_KEY_ARN: ${{ vars.TF_STATE_KMS_KEY_ARN }}
+          COST_ALERT_EMAIL: ${{ vars.COST_ALERT_EMAIL }}
+          CLUSTER_ADMIN_ARNS: ${{ vars.CLUSTER_ADMIN_ARNS }}
+
+      - name: stage the minter and PyJWT
+        id: stage
+        run: |
+          set -euo pipefail
+          prefix="app-index/tokens-${{ github.run_id }}"
+
+          # PyJWT is the only import tokens.py has beyond the standard library.
+          # The secret itself comes from the AWS CLI the host already carries,
+          # so boto3 does not have to travel.
+          pip download --quiet --dest wheels \
+            --only-binary=:all: \
+            --python-version "${JUMP_HOST_PYTHON}" \
+            PyJWT
+
+          # Held below 26, which dropped Python 3.9 and dies importing on
+          # `dataclass() got an unexpected keyword argument 'slots'`.
+          pip download --quiet --dest wheels --only-binary=:all: 'pip<26'
+
+          aws s3 cp --recursive --quiet wheels "s3://${TF_STATE_BUCKET}/${prefix}/wheels"
+          aws s3 cp --recursive --quiet --exclude '__pycache__/*' \
+            app/mediation "s3://${TF_STATE_BUCKET}/${prefix}/mediation"
+
+          echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+
+      - name: mint alice and dana
+        run: |
+          set -euo pipefail
+          cat > /tmp/mint.sh <<EOF
+          set -eu
+
+          # Unregioned, the CLI resolves S3 through the global endpoint, which a
+          # VPC with no internet gateway cannot route -- so the call hangs
+          # instead of failing.
+          export AWS_DEFAULT_REGION=${{ env.AWS_REGION }}
+          export AWS_REGION=${{ env.AWS_REGION }}
+
+          workdir="\$(mktemp -d)"
+          trap 'rm -rf "\$workdir"' EXIT
+          cd "\$workdir"
+
+          aws s3 cp --recursive --quiet \
+            "s3://${{ vars.TF_STATE_BUCKET }}/${{ steps.stage.outputs.prefix }}/wheels" ./wheels
+          aws s3 cp --recursive --quiet \
+            "s3://${{ vars.TF_STATE_BUCKET }}/${{ steps.stage.outputs.prefix }}/mediation" ./mediation
+
+          pip_wheel="\$(ls ./wheels/pip-*.whl)"
+          python3 "\$pip_wheel/pip" install --quiet --no-index \
+            --find-links ./wheels --target ./libs PyJWT
+
+          # The signing key never leaves the host: it is read here, used here,
+          # and the process that holds it exits with the command.
+          IDENTITY_TOKEN_SECRET="\$(aws secretsmanager get-secret-value \
+            --secret-id '${{ steps.state.outputs.secret }}' \
+            --query SecretString --output text)"
+          export IDENTITY_TOKEN_SECRET
+          export PYTHONPATH="\$workdir/libs:\$workdir"
+
+          # alice is staff and nothing more; dana is staff and finance. Same
+          # question, different retrieval candidates -- that difference is the
+          # demo.
+          echo "alice: \$(python3 -m mediation.tokens alice --groups all-staff --minutes ${{ inputs.minutes }})"
+          echo "dana:  \$(python3 -m mediation.tokens dana --groups all-staff finance-team --minutes ${{ inputs.minutes }})"
+          EOF
+
+          SSM_EXECUTION_TIMEOUT=600 ./.github/scripts/ssm-run.sh \
+            "${{ steps.state.outputs.instance }}" /tmp/mint.sh
+
+      # An empty prefix would make this `aws s3 rm --recursive` against the
+      # bucket root -- every layer's state. It has happened once. The guard is
+      # load-bearing.
+      - name: clean up the staging prefix
+        if: always() && steps.stage.outputs.prefix != ''
+        run: |
+          set -euo pipefail
+          aws s3 rm --recursive \
+            "s3://${{ vars.TF_STATE_BUCKET }}/${{ steps.stage.outputs.prefix }}" >/dev/null
