@@ -61,3 +61,8 @@ output "bastion_role_name" {
   description = "Jump host instance role name, for the ingestion policy attachment in the AI layer."
   value       = module.bastion.role_name
 }
+
+output "bastion_security_group_id" {
+  description = "Jump host security group. The AI layer adds it to the endpoint clients so the ingester can reach Bedrock and the vector store; both live behind endpoints that admit named security groups only."
+  value       = module.bastion.security_group_id
+}

@@ -99,9 +99,17 @@ module "endpoints" {
   vpc_id     = var.vpc_id
   subnet_ids = var.private_subnet_ids
 
-  client_security_groups = { nodes = var.eks_node_security_group_id }
-  endpoint_az_count      = var.endpoint_az_count
-  interface_services     = ["bedrock-runtime"]
+  # The nodes run the service, which reads. The jump host runs ingestion, which
+  # writes -- and both paths leave the VPC through this one security group, so
+  # admitting the bastion here is what gives the ingester Bedrock for embeddings
+  # and the collection for vectors. The collection needs no separate change: its
+  # VPC endpoint already carries this group.
+  client_security_groups = merge(
+    { nodes = var.eks_node_security_group_id },
+    var.bastion_security_group_id != "" ? { bastion = var.bastion_security_group_id } : {},
+  )
+  endpoint_az_count  = var.endpoint_az_count
+  interface_services = ["bedrock-runtime"]
 
   endpoint_policies = {
     "bedrock-runtime" = data.aws_iam_policy_document.bedrock_endpoint.json
@@ -331,4 +339,21 @@ data "aws_iam_policy_document" "ingestion" {
       module.app_secrets.tls_secret_arn,
     ]
   }
+}
+
+# Egress on a security group the platform layer owns, written here because the
+# group it points at does not exist until this layer applies. Without it the
+# ingester resolves the endpoint, sends, and waits for a connect timeout -- the
+# same shape of failure the jump host's missing S3 rule produced, and just as
+# silent.
+resource "aws_vpc_security_group_egress_rule" "bastion_to_ai_endpoints" {
+  count = var.bastion_security_group_id != "" ? 1 : 0
+
+  security_group_id = var.bastion_security_group_id
+  description       = "HTTPS to the Bedrock and vector store endpoints, for corpus ingestion"
+
+  referenced_security_group_id = module.endpoints.security_group_id
+  from_port                    = 443
+  to_port                      = 443
+  ip_protocol                  = "tcp"
 }

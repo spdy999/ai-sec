@@ -29,6 +29,7 @@ jq -r '
   "eks_oidc_provider_arn      = \"" + .eks_oidc_provider_arn.value + "\"",
   "eks_oidc_provider_url      = \"" + .eks_oidc_provider_url.value + "\"",
   "eks_node_security_group_id = \"" + .eks_node_security_group_id.value + "\"",
+  "bastion_security_group_id  = \"" + .bastion_security_group_id.value + "\"",
   "private_subnet_ids         = " + (.private_subnet_ids.value | tostring),
   "ingestion_role_arn         = \"" + .bastion_role_arn.value + "\"",
   "ingestion_role_name        = \"" + .bastion_role_name.value + "\""

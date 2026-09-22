@@ -89,6 +89,12 @@ variable "account_id" {
   }
 }
 
+variable "bastion_security_group_id" {
+  description = "Jump host security group. Ingestion runs there -- it is the only principal the data access policy grants writes to -- so it needs the same endpoint access the nodes have. Empty offline, which leaves the endpoints admitting the nodes alone."
+  type        = string
+  default     = ""
+}
+
 variable "eks_node_security_group_id" {
   description = "Security group of the EKS nodes running the mediation layer. Only this SG may reach the VPC endpoints."
   type        = string

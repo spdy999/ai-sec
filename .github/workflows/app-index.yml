@@ -1,0 +1,181 @@
+# Build the vector index from the corpus.
+#
+# The split is the same one app-deploy.yml makes, for the same reason and in the
+# other direction: the runner is the only machine that can reach PyPI, and the
+# jump host is the only principal the OpenSearch data access policy grants
+# writes to. So the runner downloads the libraries the ingester needs, and the
+# jump host runs it.
+#
+# That write restriction is the control this workflow exists to preserve. The
+# service can only read the index, so a prompt injection has no write permission
+# to poison the corpus with -- not a check in the code, which the injection
+# would be trying to reach anyway, but the absence of the permission. Ingesting
+# from the runner would mean granting the deploy role writes and giving that up.
+#
+# Order: `infra provision`, then this. The manifests do not have to be applied
+# first, but nothing can be asked of the service until this has run.
+
+name: app index
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type `index` to confirm. --recreate drops the existing index first.
+        required: true
+        type: string
+
+concurrency:
+  group: genai-app-index
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: eu-central-1
+  TF_VERSION: "1.14.8"
+  TF_EKS: controls/terraform/eks-platform
+  TF_AI: controls/terraform/bedrock-ai
+
+  # The jump host runs Amazon Linux 2023, whose system python is 3.9. The wheels
+  # have to match it, not the runner's interpreter.
+  JUMP_HOST_PYTHON: "3.9"
+
+jobs:
+  index:
+    name: stage and ingest
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    environment:
+      name: production
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: refuse an unconfirmed run
+        run: |
+          if [ "${{ inputs.confirm }}" != "index" ]; then
+            echo "confirm must be the word index; --recreate drops the existing index" >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-index-${{ github.run_id }}
+
+      - name: read the corpus bucket and collection from applied state
+        id: state
+        run: |
+          set -euo pipefail
+          ./.github/scripts/tf-config.sh "$TF_EKS" eks-platform
+          ./.github/scripts/tf-config.sh "$TF_AI" bedrock-ai
+          ./.github/scripts/tf-wire.sh
+          terraform -chdir="$TF_EKS" init -input=false -no-color >/dev/null
+          terraform -chdir="$TF_AI"  init -input=false -no-color >/dev/null
+
+          {
+            echo "instance=$(terraform -chdir="$TF_EKS" output -raw bastion_instance_id)"
+            echo "bucket=$(terraform -chdir="$TF_AI" output -raw rag_bucket)"
+            echo "endpoint=$(terraform -chdir="$TF_AI" output -raw vector_collection_endpoint)"
+          } >> "$GITHUB_OUTPUT"
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          TF_STATE_REGION: ${{ vars.TF_STATE_REGION }}
+          TF_STATE_KMS_KEY_ARN: ${{ vars.TF_STATE_KMS_KEY_ARN }}
+          COST_ALERT_EMAIL: ${{ vars.COST_ALERT_EMAIL }}
+          CLUSTER_ADMIN_ARNS: ${{ vars.CLUSTER_ADMIN_ARNS }}
+
+      - name: stage the ingester and its libraries
+        id: stage
+        run: |
+          set -euo pipefail
+          prefix="app-index/${{ github.run_id }}"
+
+          # --only-binary and an explicit --python-version because this runner's
+          # interpreter is not the one that will import these. A source
+          # distribution would try to build on a host with no compiler and no
+          # network.
+          pip download --quiet --dest wheels \
+            --only-binary=:all: \
+            --python-version "${JUMP_HOST_PYTHON}" \
+            boto3 opensearch-py requests
+
+          # pip itself, because the jump host has none: a wheel is a zip, and
+          # python can run the pip inside it directly.
+          pip download --quiet --dest wheels --only-binary=:all: pip
+
+          aws s3 cp --recursive --quiet wheels "s3://${TF_STATE_BUCKET}/${prefix}/wheels"
+          aws s3 cp --recursive --quiet --exclude '__pycache__/*' \
+            app/mediation "s3://${TF_STATE_BUCKET}/${prefix}/mediation"
+
+          echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+
+      - name: ingest from the jump host
+        run: |
+          set -euo pipefail
+          cat > /tmp/index.sh <<EOF
+          set -eu
+
+          # Unregioned, the CLI resolves S3 through the global endpoint, which a
+          # VPC with no internet gateway cannot route -- so the call hangs
+          # instead of failing.
+          export AWS_DEFAULT_REGION=${{ env.AWS_REGION }}
+          export AWS_REGION=${{ env.AWS_REGION }}
+
+          workdir="\$(mktemp -d)"
+          trap 'rm -rf "\$workdir"' EXIT
+          cd "\$workdir"
+
+          aws s3 cp --recursive --quiet \
+            "s3://${{ vars.TF_STATE_BUCKET }}/${{ steps.stage.outputs.prefix }}/wheels" ./wheels
+          aws s3 cp --recursive --quiet \
+            "s3://${{ vars.TF_STATE_BUCKET }}/${{ steps.stage.outputs.prefix }}/mediation" ./mediation
+
+          # The package has to be importable as mediation.ingest, so it needs an
+          # __init__.py -- which it has -- and a parent on sys.path, which is
+          # this directory.
+          pip_wheel="\$(ls ./wheels/pip-*.whl)"
+          python3 "\$pip_wheel/pip" install --quiet --no-index \
+            --find-links ./wheels --target ./libs \
+            boto3 opensearch-py requests
+
+          PYTHONPATH="\$workdir/libs:\$workdir" python3 -m mediation.ingest \
+            --provider bedrock \
+            --bucket '${{ steps.state.outputs.bucket }}' \
+            --endpoint '${{ steps.state.outputs.endpoint }}' \
+            --strict --recreate
+          EOF
+
+          SSM_EXECUTION_TIMEOUT=900 ./.github/scripts/ssm-run.sh \
+            "${{ steps.state.outputs.instance }}" /tmp/index.sh
+
+      - name: clean up the staging prefix
+        if: always()
+        run: |
+          aws s3 rm --recursive \
+            "s3://${{ vars.TF_STATE_BUCKET }}/${{ steps.stage.outputs.prefix }}" >/dev/null || true
+
+      - name: report
+        run: |
+          {
+            echo "### Corpus indexed"
+            echo
+            echo "- corpus: \`${{ steps.state.outputs.bucket }}\`"
+            echo "- collection: \`${{ steps.state.outputs.endpoint }}\`"
+            echo "- indexed from: jump host \`${{ steps.state.outputs.instance }}\`, over Session Manager"
+          } >> "$GITHUB_STEP_SUMMARY"
