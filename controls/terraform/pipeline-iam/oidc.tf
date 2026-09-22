@@ -166,6 +166,35 @@ data "aws_iam_policy_document" "deploy_infrastructure" {
     resources = ["*"]
   }
 
+  # The AI layer creates the containers for the application's secret material
+  # and attaches a resource policy to each. It never writes a value: no
+  # aws_secretsmanager_secret_version exists, precisely so the plaintext stays
+  # out of Terraform state, and PutSecretValue is therefore absent here. The
+  # jump host holds that, and generates the material inside the VPC.
+  #
+  # Scoped to this platform's own names. Secret ARNs carry a random six
+  # character suffix, so the wildcard is on the ARN and not on the name.
+  statement {
+    sid    = "PlatformSecretContainersOnly"
+    effect = "Allow"
+
+    actions = [
+      "secretsmanager:CreateSecret",
+      "secretsmanager:DeleteSecret",
+      "secretsmanager:DescribeSecret",
+      "secretsmanager:UpdateSecret",
+      "secretsmanager:TagResource",
+      "secretsmanager:UntagResource",
+      "secretsmanager:GetResourcePolicy",
+      "secretsmanager:PutResourcePolicy",
+      "secretsmanager:DeleteResourcePolicy",
+    ]
+
+    resources = [
+      "arn:aws:secretsmanager:${var.region}:${var.account_id}:secret:${var.name_prefix}/*",
+    ]
+  }
+
   # Applying workload manifests means reaching a private API server, which no
   # GitHub runner can do. The deploy job sends a command to the jump host
   # instead and reads the result back. Scoped to the platform's own instances:
