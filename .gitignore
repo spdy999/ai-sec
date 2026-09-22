@@ -38,6 +38,13 @@ controls/terraform/*/backend.tf
 # its backend is a real committed file.
 !controls/terraform/pipeline-iam/backend.tf
 terraform.tfvars
+# pipeline-iam is the exception again, for the same reason. The two deploy roots
+# get their variables from tf-config.sh at deploy time, so a committed
+# terraform.tfvars there would be dead weight at best and drift at worst. This
+# root is run once, by hand, and its inputs are the account and repository it is
+# being wired to -- no secrets, and losing them means a fresh clone cannot
+# reproduce the bootstrap without guessing.
+!controls/terraform/pipeline-iam/terraform.tfvars
 
 # Built React bundle and its toolchain; the image build produces both.
 app/web/node_modules/
