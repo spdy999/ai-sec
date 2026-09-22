@@ -147,9 +147,19 @@ resource "aws_iam_instance_profile" "bastion" {
 # binary in S3 and sends this host a command; these two grants are the other
 # half of that path.
 #
-# Read only, and only under the staging prefix. This host writes vectors and
+# Read only, and only under the staging prefixes. This host writes vectors and
 # secrets elsewhere; it has no reason to write to the state bucket, where its
 # own cluster's state lives.
+#
+# Two prefixes, one per pipeline that stages work for this host: app-deploy
+# leaves manifests and a kubectl binary, app-index leaves the ingester and the
+# Python wheels it cannot download itself. Listed rather than wildcarded, so a
+# future workflow has to be named here before this host will read what it staged
+# -- and so neither can reach the state objects that share the bucket.
+locals {
+  staging_prefixes = ["app-deploy/*", "app-index/*"]
+}
+
 data "aws_iam_policy_document" "bastion_deploy" {
   count = var.deploy_staging_bucket_arn != "" ? 1 : 0
 
@@ -157,7 +167,7 @@ data "aws_iam_policy_document" "bastion_deploy" {
     sid       = "FetchStagedDeployArtefacts"
     effect    = "Allow"
     actions   = ["s3:GetObject"]
-    resources = ["${var.deploy_staging_bucket_arn}/app-deploy/*"]
+    resources = [for prefix in local.staging_prefixes : "${var.deploy_staging_bucket_arn}/${prefix}"]
   }
 
   statement {
@@ -169,7 +179,7 @@ data "aws_iam_policy_document" "bastion_deploy" {
     condition {
       test     = "StringLike"
       variable = "s3:prefix"
-      values   = ["app-deploy/*"]
+      values   = local.staging_prefixes
     }
   }
 
