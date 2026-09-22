@@ -47,6 +47,9 @@ def generate(prompt: str) -> dict:
                 "max_tokens": 800,
                 "temperature": 0,
                 "messages": [{"role": "user", "content": prompt}],
+                # Without this the tags in the prompt are literal text and the
+                # prompt-attack filter is never applied to anything.
+                "amazon-bedrock-guardrailConfig": {"tagSuffix": config.GUARD_TAG},
             }
         ),
     )
