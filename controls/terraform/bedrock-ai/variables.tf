@@ -152,11 +152,17 @@ variable "chat_model_id" {
 variable "model_routing_regions" {
   description = "Regions a cross-region inference profile may route a request to. The profile ARN is regional, but the foundation model ARNs it reaches are not, and IAM evaluates both -- authorise only the profile and every call fails with AccessDenied that names the model ARN. Every entry must sit inside the residency allow-list."
   type        = list(string)
+  # Not a guess: `aws bedrock get-inference-profile --inference-profile-identifier
+  # eu.anthropic.claude-...` lists exactly these six. Omitting two of them is
+  # invisible until the profile happens to route there, and the refusal names a
+  # region nothing in the configuration mentions.
   default = [
     "eu-central-1",
     "eu-west-1",
     "eu-west-3",
     "eu-north-1",
+    "eu-south-1",
+    "eu-south-2",
   ]
 }
 
