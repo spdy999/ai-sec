@@ -94,3 +94,8 @@ variable "embedding_model_id" {
   description = "Embedding model the service uses to vectorise a question. Granted without the guardrail condition, because an embedding call carries none."
   type        = string
 }
+
+variable "guardrail_id" {
+  description = "Guardrail id, one of the forms the bedrock:GuardrailIdentifier condition key may carry."
+  type        = string
+}
