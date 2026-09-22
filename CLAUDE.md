@@ -87,7 +87,9 @@ app/                  the only custom code: mediation service (FastAPI) and its
                       (reusable: the only place terraform runs); infra-provision,
                       infra-destroy, infra-eks-platform, infra-bedrock-ai
                       (dispatch-only callers, OIDC, no stored keys); app-image.yml
-                      builds and pushes the mediation image
+                      builds and pushes the mediation image; app-secrets.yml
+                      generates the secret material on the jump host;
+                      app-deploy.yml renders, gates and applies the manifests
 .github/scripts/      backend + tfvars generation and cross-root wiring for deploy
 docs/RUNBOOK.md       operational how-to: prereqs, offline loop, live cluster,
                       real AWS apply/destroy order, demo, troubleshooting
@@ -110,8 +112,10 @@ dispatch-only. Always tear down after a live session.
 **`aws-vault` sessions cannot call IAM — always pass `--no-session`.** Without
 it the credentials are wrapped in a `GetSessionToken` session that IAM refuses
 with `InvalidClientTokenId`, while `sts:GetCallerIdentity` succeeds with the
-same token, so the credentials look fine. The account is `171414227044`, the
-profile `pun100`.
+same token, so the credentials look fine. The account is `891377211626`, the
+profile `spdy999`. It replaced `171414227044` / `pun100` on 2026-09-22; the old
+account is torn down and empty, and anything still naming it (old commits,
+`docs/evidence/aws-live-capture.md`) is history rather than configuration.
 
 **The S3 backend is generated at deploy time, never committed.** Declaring a
 `backend "s3"` block in either root makes `terraform plan` refuse to run
@@ -276,6 +280,69 @@ reason. What is lost is replay of what was asked. The trail is single-region on
 purpose: a multi-region trail would pull events from outside the EU allow-list
 into this account's log store.
 
+**Anthropic models are invocable only through an inference profile.** Every
+Anthropic model in `eu-central-1` lists `inferenceTypesSupported:
+INFERENCE_PROFILE` and nothing else, so `modelId` must be
+`eu.anthropic.claude-sonnet-4-5-20250929-v1:0`. The bare foundation model ID
+fails with `ValidationException: Invocation of model ID ... with on-demand
+throughput isn't supported`. IAM then evaluates two ARN shapes for what is one
+call: the `inference-profile/` ARN in this account, and the
+`foundation-model/` ARN in whichever region the profile routed to — so the
+grant spans `var.model_routing_regions`, all EU. Authorising only the profile
+produces an AccessDenied naming the model ARN. The governance rule strips the
+geography prefix before checking the allow-list, so a new model cannot be
+approved by prefixing it. Titan embeddings take the bare ID and need none of
+this.
+
+**`eu-west-1` and `eu-north-1` still answer `Your account is currently being
+verified`** for Bedrock on this account, while `eu-central-1` and `eu-west-3`
+work. New accounts clear this within hours. It is per-region, not account-wide,
+and the same call in a working region is how to tell the two apart.
+
+**The application's secrets are in Secrets Manager, and Terraform never sees
+their values.** `modules/app-secrets` creates the two containers — the identity
+signing key and the mediation TLS pair — CMK-encrypted, each with a resource
+policy denying `GetSecretValue` to every principal but the workload role and
+the jump host. There is deliberately no `aws_secretsmanager_secret_version`: a
+version resource puts the plaintext into state, and state holds every attribute
+of every resource. `app-secrets.yml` generates both **on the jump host**, so the
+material is created inside the VPC and never reaches a CI runner. No Kubernetes
+Secret exists in the namespace at all; the service reads both at startup with
+its own IRSA credentials, and `entrypoint.sh` writes the certificate to the
+memory-backed `/tmp` because uvicorn needs `--ssl-certfile` as a path before any
+application code runs.
+
+**A deploy from a GitHub runner cannot reach the cluster, so the jump host
+applies it.** `app-deploy.yml` renders manifests from applied state, gates the
+*rendered* output rather than the committed shape — substituting real
+identifiers is the step that could introduce a violation — stages them plus a
+`kubectl` binary in the state bucket, and sends the jump host a Run Command.
+`kubectl` travels that way because the host cannot download one.
+
+**`ssm:SendCommand` authorises against two resources, and a condition on the
+instance tag denies the document.** One statement naming both the document and
+the instance with a `ssm:resourceTag/Name` condition fails, because the document
+carries no such tag — and the error names the document, which reads as though
+the document were the problem. Two statements: the document unconditionally,
+the instance under the tag condition.
+
+**A multi-line script cannot go through `--parameters commands=...`.** That is
+the CLI's shorthand syntax; it splits on commas and mangles newlines, and the
+script arrives as one line that fails with `unexpected EOF while looking for
+matching quote`. Build a JSON file and pass `--parameters file://...`.
+`ssm-run.sh` also sets `executionTimeout`, without which a hanging command stays
+`InProgress` for an hour and the run reads as slow rather than stuck.
+
+**A route is not a permission, and this cost an hour twice.** The S3 gateway
+endpoint puts a route in the route table, but the security group must also allow
+egress to the S3 prefix list. Missing on the nodes it left them NotReady with no
+health issue reported; missing on the jump host it made every S3 call hang until
+its connect timeout, with empty stderr, so the deploy looked slow rather than
+broken. The tell is `Connect timeout on endpoint URL` naming a correctly
+resolved regional endpoint. The same class of failure applies to any service
+with no interface endpoint: `secretsmanager` had none, and both the jump host
+and the pod need one.
+
 **Bedrock guardrails are configured in Terraform, not reimplemented in code.**
 Custom code exists only for identity-aware authorization. Measuring the
 guardrail's real block rate through `ApplyGuardrail` was cut — see State.
@@ -343,13 +410,41 @@ bucket shares the `genai-assistant-` prefix, so the S3 grant would otherwise
 reach it). Tightening the remaining wildcards after a first apply belongs in
 the risk assessment.
 
-**The demo application is written and has never run.** `app/` holds the
-mediation service and its React front-end; `controls/kubernetes/base/` holds the
-manifests, now with a ConfigMap, a Service and an operator port-forward network
-policy. None of it has been built, pushed or applied, because nothing is
-provisioned. The sequence is `docs/RUNBOOK.md` section 4c.
+**The demo application is deployed and running.** Two `genai-mediation` pods
+reached 1/1 Ready on 2026-09-22 in `891377211626`. The v1 image was applied by
+hand; the move to v2 — which is what makes the service read its secrets from
+Secrets Manager rather than Kubernetes Secrets — went through `app-deploy.yml`
+and was still being retried when the session ended. Corpus ingestion and token
+minting (RUNBOOK §4c steps 4 and 5) have not been done, so nothing has been
+asked of it yet and the five demo rows are unproven.
 
-Outstanding: the five-page design summary and the top-5 risk assessment.
+Two leftovers to clear: the namespace still holds `genai-mediation-identity` and
+`genai-mediation-tls`, the Kubernetes Secrets created by hand before the move to
+Secrets Manager. Nothing references them once v2 lands, and deleting them is
+what makes "no Kubernetes Secret exists" true in fact rather than only in the
+manifest.
+
+**A manifest can be valid and still rejected by the API server.** The deployment
+hand-projected the IRSA token at
+`/var/run/secrets/eks.amazonaws.com/serviceaccount`, which is where the EKS pod
+identity webhook injects its own — so every pod was refused with
+`mountPath: must be unique` and the Deployment sat at 0/2 with the failure only
+visible in its `ReplicaFailure` condition. The offline gate passed it, because
+the gate reads the manifest and not what an admission webhook does to it. The
+token's audience and one hour lifetime now come from the
+`eks.amazonaws.com/token-expiration` annotation on the ServiceAccount.
+
+**The account switch took five fixes, each found only by running it.** GitHub's
+ID-qualified OIDC subject was already known; the new ones were the deploy role
+having no Secrets Manager permissions at all, `SendCommand` needing its two
+resources authorised separately, the SSM CLI shorthand mangling a multi-line
+script, no `secretsmanager` interface endpoint in the VPC, and no jump host
+egress to the S3 prefix list. Every one passed `make ci` clean. Each is its own
+`fix(...)` commit between `38c09a2` and `e8f8b4d`.
+
+Outstanding: the five-page design summary, the top-5 risk assessment, and the
+first end-to-end run of the demo (corpus ingested, tokens minted, the five rows
+asked).
 
 **The `ApplyGuardrail` test harness is cut, deliberately.** Measuring the real
 block rate against an injection corpus is the right thing to build and there is
