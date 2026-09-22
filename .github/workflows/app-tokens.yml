@@ -98,10 +98,16 @@ jobs:
           # PyJWT is the only import tokens.py has beyond the standard library.
           # The secret itself comes from the AWS CLI the host already carries,
           # so boto3 does not have to travel.
+          #
+          # typing_extensions is named because PyJWT requires it only under
+          # `python_version < "3.11"`, and --python-version does not reach the
+          # marker: the resolver evaluates it against this runner, decides the
+          # dependency does not apply, and the host then fails with "No matching
+          # distribution found" for a package nobody asked for by name.
           pip download --quiet --dest wheels \
             --only-binary=:all: \
             --python-version "${JUMP_HOST_PYTHON}" \
-            PyJWT
+            PyJWT typing_extensions
 
           # Held below 26, which dropped Python 3.9 and dies importing on
           # `dataclass() got an unexpected keyword argument 'slots'`.
