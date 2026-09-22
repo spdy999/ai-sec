@@ -124,6 +124,7 @@ module "endpoints" {
 # IAM policy still cannot reach an unapproved model from inside this VPC.
 data "aws_iam_policy_document" "bedrock_endpoint" {
   statement {
+    sid    = "TheServiceAsksTheApprovedModels"
     effect = "Allow"
 
     principals {
@@ -145,6 +146,27 @@ data "aws_iam_policy_document" "bedrock_endpoint" {
         module.guardrail.guardrail_arn,
       ],
     )
+  }
+
+  # The ingester embeds the corpus, and it does so from inside this VPC, so the
+  # endpoint policy has to name it as well as IAM -- the two are evaluated
+  # separately and the refusal says which one denied: "no VPC endpoint policy
+  # allows the bedrock:InvokeModel action" is this document, not the role.
+  #
+  # Embeddings only, and only the one model. It has no grant on the chat model,
+  # the inference profile or the guardrail, so the jump host cannot ask a
+  # question through the path it uses to index one.
+  statement {
+    sid    = "TheIngesterEmbedsOnly"
+    effect = "Allow"
+
+    principals {
+      type        = "AWS"
+      identifiers = [var.ingestion_role_arn]
+    }
+
+    actions   = ["bedrock:InvokeModel"]
+    resources = [local.embedding_model_arn]
   }
 }
 
