@@ -147,7 +147,25 @@ jobs:
             --kubeconfig "\$KUBECONFIG" >/dev/null
 
           ./kubectl apply -f ./manifests
-          ./kubectl -n genai-platform rollout status deployment/genai-mediation --timeout=5m
+
+          # A rollout that times out says only "timed out waiting for the
+          # condition", which is true of a missing image, a refused secret and a
+          # failing probe alike. The state that distinguishes them lives on the
+          # cluster and is gone from this runner's reach, so it is printed here
+          # -- otherwise every failure costs a hand-driven Run Command to see
+          # what the runner already had a session to ask.
+          if ! ./kubectl -n genai-platform rollout status deployment/genai-mediation --timeout=5m; then
+            echo "--- pods"
+            ./kubectl -n genai-platform get pods -o wide || true
+            echo "--- events"
+            ./kubectl -n genai-platform describe pods -l app.kubernetes.io/name=genai-mediation \
+              | sed -n '/Events:/,\$p' | head -40 || true
+            echo "--- logs"
+            ./kubectl -n genai-platform logs -l app.kubernetes.io/name=genai-mediation \
+              --tail=40 --all-containers --prefix || true
+            exit 1
+          fi
+
           ./kubectl -n genai-platform get pods
           EOF
 

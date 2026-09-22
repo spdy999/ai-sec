@@ -137,6 +137,13 @@ data "aws_iam_policy_document" "mediation" {
       values = [
         "s3.${var.region}.amazonaws.com",
         "bedrock.${var.region}.amazonaws.com",
+
+        # Secrets Manager decrypts the secret with this key on the caller's
+        # behalf, so GetSecretValue is refused without it -- and the refusal
+        # says "Access to KMS is not allowed" with no key id and no action, so
+        # it reads as a Secrets Manager problem rather than a missing condition
+        # value. The grant above it is necessary and not sufficient.
+        "secretsmanager.${var.region}.amazonaws.com",
       ]
     }
   }
