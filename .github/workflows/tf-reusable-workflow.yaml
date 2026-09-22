@@ -15,7 +15,7 @@ on:
         required: true
         type: string
       action:
-        description: apply or destroy.
+        description: plan, apply or destroy. plan stops after the policy gate and applies nothing.
         required: true
         type: string
       run_gate:
@@ -142,10 +142,11 @@ jobs:
       # one here, against the saved plan about to be applied -- so the bytes the
       # rules inspect are the bytes that run, not an offline approximation.
       #
-      # Skipped on destroy: a destroy plan removes resources, and a rule that
-      # asks whether a resource is configured correctly has nothing to read.
+      # Skipped on destroy only: a destroy plan removes resources, and a rule
+      # that asks whether a resource is configured correctly has nothing to
+      # read. A plan run plans and gates exactly as an apply run does.
       - name: install conftest
-        if: inputs.action == 'apply'
+        if: inputs.action != 'destroy'
         run: |
           set -euo pipefail
           curl -sSL -o conftest.tar.gz \
@@ -154,11 +155,16 @@ jobs:
           sudo mv conftest /usr/local/bin/
 
       - name: policy gate on the plan being applied
-        if: inputs.action == 'apply'
+        if: inputs.action != 'destroy'
         run: |
           set -euo pipefail
           terraform -chdir="$TF_DIR" show -json tf.plan > "$TF_DIR/plan.json"
           make policy-plan PLAN="$TF_DIR/plan.json"
 
+      # `plan` stops here. Everything above it has run -- the backend, the real
+      # credentials, the refreshed state, the policy gate against the saved plan
+      # -- so a plan run is the same evidence an apply produces, minus the
+      # change to the account.
       - name: ${{ inputs.action }}
+        if: inputs.action != 'plan'
         run: terraform -chdir="$TF_DIR" apply -input=false -no-color tf.plan

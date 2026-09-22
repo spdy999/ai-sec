@@ -5,19 +5,38 @@
 
 name: infra bedrock-ai
 
+# Trunk based: a push to main that touches this layer plans it automatically,
+# against real state and real credentials, and stops there. Nothing reaches the
+# account without someone dispatching apply. The plan is the change detection --
+# it is how a config edit that would destroy a node group is seen before it
+# does.
 on:
+  push:
+    branches: [main]
+    paths:
+      - controls/terraform/bedrock-ai/**
+      - controls/data/corpus/**
+      - .github/scripts/tf-wire.sh
+      - controls/terraform/modules/**
+      - controls/policy/**
+      - .github/scripts/tf-config.sh
+      - .github/workflows/tf-reusable-workflow.yaml
+      - .github/workflows/infra-bedrock-ai.yml
   workflow_dispatch:
     inputs:
       action:
-        description: apply or destroy
+        description: plan, apply or destroy
         required: true
         type: choice
-        options: [apply, destroy]
+        options: [plan, apply, destroy]
         default: apply
 
+# An apply or a destroy contends for the live account, so both share one lock
+# and queue. A plan changes nothing, so it runs in its own lane and a newer push
+# supersedes an older plan rather than waiting for it.
 concurrency:
-  group: genai-platform-live
-  cancel-in-progress: false
+  group: ${{ (inputs.action == 'apply' || inputs.action == 'destroy') && 'genai-platform-live' || format('genai-plan-{0}', github.workflow) }}
+  cancel-in-progress: ${{ inputs.action != 'apply' && inputs.action != 'destroy' }}
 
 permissions:
   contents: read
@@ -27,7 +46,10 @@ jobs:
     uses: ./.github/workflows/tf-reusable-workflow.yaml
     with:
       layer: bedrock-ai
-      action: ${{ inputs.action }}
+      action: ${{ inputs.action || 'plan' }}
+      # security.yml runs the offline gate chain on this same commit already. A
+      # dispatch can arrive on a commit that never saw it, so that path keeps it.
+      run_gate: ${{ github.event_name == 'workflow_dispatch' }}
     permissions:
       contents: read
       id-token: write
