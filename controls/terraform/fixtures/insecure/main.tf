@@ -430,3 +430,20 @@ resource "aws_secretsmanager_secret" "signing_key_on_the_default_key" {
   name        = "genai-insecure/identity-signing-key"
   description = "HMAC key for caller identity tokens"
 }
+
+# VIOLATION 37: detection theatre. The platform declares a guardrail, so its
+# verdicts matter, and the only alarm over them has no action at all -- it
+# changes colour on a console nobody has open. An audit questionnaire asking
+# "are guardrail blocks alarmed?" is answered yes by exactly this.
+resource "aws_cloudwatch_metric_alarm" "nobody_is_told" {
+  alarm_name          = "genai-insecure-guardrail-blocks"
+  namespace           = "genai/insecure"
+  metric_name         = "GuardrailInterventions"
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  threshold           = 1
+
+  alarm_actions = []
+}

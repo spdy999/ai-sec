@@ -94,3 +94,49 @@ deny contains msg if {
 
 	msg := "logging: RAG bucket has no versioning, so document poisoning is not recoverable"
 }
+
+# Recording is not detecting. A trail and a telemetry log group are evidence for
+# an investigation somebody has already decided to start; neither raises a hand.
+# A platform that runs a model against employee data must have at least one
+# alarm that notifies somebody, or every detection in the risk assessment is a
+# sentence rather than a control.
+deny contains msg if {
+	count(lib.typed("aws_bedrock_guardrail")) > 0
+	count(notifying_alarms) == 0
+
+	msg := "logging: the platform declares a guardrail but no CloudWatch alarm with a notification action; nothing reads the audit trail"
+}
+
+notifying_alarms contains resource.address if {
+	some resource in lib.typed("aws_cloudwatch_metric_alarm")
+	notifies(resource)
+}
+
+# An alarm with no action is a dashboard widget. It changes colour and tells
+# nobody, which is worse than absent: it appears in an audit as detection
+# coverage.
+deny contains msg if {
+	some resource in lib.typed("aws_cloudwatch_metric_alarm")
+	not notifies(resource)
+
+	msg := sprintf(
+		"logging: %s has no alarm_actions, so it changes state and notifies nobody",
+		[resource.address],
+	)
+}
+
+# Terraform renders an empty action list as null rather than as [], so the
+# count has to be guarded by is_array or the rule is silently undefined against
+# exactly the configuration it exists to catch.
+notifies(resource) if {
+	actions := object.get(resource, ["values", "alarm_actions"], [])
+	is_array(actions)
+	count(actions) > 0
+}
+
+# An action pointing at a topic created in the same plan is unknown until
+# apply, which is not the same as absent. Without this the rule rejects the
+# secure layer for having exactly the alarms it asks for.
+notifies(resource) if {
+	lib.unknown_at(resource.address, ["alarm_actions"])
+}

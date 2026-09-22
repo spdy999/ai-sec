@@ -17,3 +17,8 @@ output "mediation_log_group_name" {
   description = "Log group name, for the SIEM forwarder subscription."
   value       = aws_cloudwatch_log_group.mediation.name
 }
+
+output "trail_log_group_name" {
+  description = "Log group name, for metric filters over the trail."
+  value       = aws_cloudwatch_log_group.trail.name
+}

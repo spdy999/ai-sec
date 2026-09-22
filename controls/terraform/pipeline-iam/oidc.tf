@@ -154,6 +154,29 @@ data "aws_iam_policy_document" "deploy_infrastructure" {
       # resource-level ARN.
       "ce:*",
 
+      # Detection content: the metric filters are logs:*, but the alarms and
+      # the topic they publish to are two more services. Named rather than
+      # wildcarded, because unlike ec2 and eks these act on resources whose
+      # names this root can predict.
+      "cloudwatch:PutMetricAlarm",
+      "cloudwatch:DeleteAlarms",
+      "cloudwatch:DescribeAlarms",
+      "cloudwatch:ListTagsForResource",
+      "cloudwatch:TagResource",
+      "cloudwatch:UntagResource",
+
+      "sns:CreateTopic",
+      "sns:DeleteTopic",
+      "sns:GetTopicAttributes",
+      "sns:SetTopicAttributes",
+      "sns:ListTagsForResource",
+      "sns:TagResource",
+      "sns:UntagResource",
+      "sns:Subscribe",
+      "sns:Unsubscribe",
+      "sns:GetSubscriptionAttributes",
+      "sns:ListSubscriptionsByTopic",
+
       "sts:GetCallerIdentity",
 
       # The deploy job resolves the jump host AMI from the public Amazon Linux

@@ -57,3 +57,13 @@ output "tls_secret_arn" {
   description = "Secret holding the mediation listener's certificate and private key."
   value       = module.app_secrets.tls_secret_arn
 }
+
+output "security_alert_topic_arn" {
+  description = "Topic every security alarm publishes to. The email subscription must be confirmed by hand before anything is delivered."
+  value       = module.alerting.topic_arn
+}
+
+output "security_alarm_names" {
+  description = "Deployed alarms, for the runbook and for evidence."
+  value       = module.alerting.alarm_names
+}

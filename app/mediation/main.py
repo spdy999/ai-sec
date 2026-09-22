@@ -63,6 +63,12 @@ def ask(body: Question, authorization: str | None = Header(default=None)) -> dic
     try:
         caller = identity.caller_from_authorization(authorization)
     except identity.IdentityError as exc:
+        # A refusal is a security event, not only an HTTP status. Repeated
+        # refusals are what a forged, expired or replayed token looks like from
+        # this side, and an alarm reads this event to say so. The reason is
+        # PyJWT's, which names the check that failed and never the token.
+        telemetry.record({"event": "authorization_refused", "reason": str(exc)})
+
         # No retrieval has happened at this point, which is the intended order.
         raise HTTPException(status_code=401, detail=str(exc)) from exc
 

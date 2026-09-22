@@ -100,6 +100,7 @@ jobs:
           TF_STATE_REGION: ${{ vars.TF_STATE_REGION }}
           TF_STATE_KMS_KEY_ARN: ${{ vars.TF_STATE_KMS_KEY_ARN }}
           COST_ALERT_EMAIL: ${{ vars.COST_ALERT_EMAIL }}
+          SECURITY_ALERT_EMAIL: ${{ vars.SECURITY_ALERT_EMAIL }}
           CLUSTER_ADMIN_ARNS: ${{ vars.CLUSTER_ADMIN_ARNS }}
 
       # The AI layer's inputs are the platform layer's outputs, read from
@@ -116,6 +117,7 @@ jobs:
           TF_STATE_REGION: ${{ vars.TF_STATE_REGION }}
           TF_STATE_KMS_KEY_ARN: ${{ vars.TF_STATE_KMS_KEY_ARN }}
           COST_ALERT_EMAIL: ${{ vars.COST_ALERT_EMAIL }}
+          SECURITY_ALERT_EMAIL: ${{ vars.SECURITY_ALERT_EMAIL }}
           CLUSTER_ADMIN_ARNS: ${{ vars.CLUSTER_ADMIN_ARNS }}
 
       - name: init

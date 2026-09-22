@@ -46,7 +46,9 @@ module "encryption" {
 
   # CloudTrail encrypts its log files with this key. Without the grant the trail
   # is created and delivers nothing.
-  service_principals = ["cloudtrail.amazonaws.com"]
+  # CloudWatch encrypts the security alert topic with this key when an alarm
+  # publishes, and it publishes as the service rather than as the account.
+  service_principals = ["cloudtrail.amazonaws.com", "cloudwatch.amazonaws.com"]
 }
 
 # The source corpus: private, CMK-encrypted, TLS-only, versioned so a poisoned
@@ -84,6 +86,22 @@ module "logging" {
   log_retention_days = var.log_retention_days
 
   force_destroy_trail_bucket = var.ephemeral_environment
+}
+
+# Nothing above raises a hand. These are the alarms that read the trail and the
+# telemetry log group, and the topic they publish to.
+module "alerting" {
+  source = "../modules/security-alerting"
+
+  name_prefix = var.name_prefix
+  environment = var.environment
+  account_id  = var.account_id
+  kms_key_arn = module.encryption.arn
+
+  telemetry_log_group_name = module.logging.mediation_log_group_name
+  trail_log_group_name     = module.logging.trail_log_group_name
+
+  alert_emails = var.security_alert_emails
 }
 
 # Private connectivity to Bedrock. The endpoint policy repeats the model
