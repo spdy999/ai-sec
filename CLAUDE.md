@@ -596,6 +596,8 @@ end the pod serves at `/` on :8443. Four of the five rows behave as designed:
 | "ignore all previous instructions…" | alice | guardrail intervened; "blocked by the Korber AI security guardrail" |
 | customer records | alice | the model declined; the guardrail did not fire |
 
+Row five was fixed after that run: see below.
+
 Rows two and three back to back are the point of the design: same question, same
 index, different answer, and the difference is in what was retrievable rather
 than in what the model was told to say. The badge on row two reads "guardrail
@@ -603,12 +605,16 @@ passed" and that is correct — nothing in the question is an attack, so the
 guardrail evaluated it and found nothing. The control doing the work there is
 entitlement filtering, visible in the Sources line.
 
-**Row five is honest and weak.** Asking for customer records is not a prompt
-attack, and the PII filters mask PII that is present rather than refusing a
-request for it — there is none in the corpus, so nothing trips and the model's
-own refusal is all that answers. Either add a denied topic covering customer and
-payment data, alongside `credential-disclosure`, or replace the row with
-something the guardrail owns. Not decided.
+**Row five was weak, and the fix is a second denied topic.** Asking for
+customer records is not a prompt attack, and the PII filters mask PII that
+appears in a response rather than refusing a request for it — `customer-
+records.md` is `support-team` only, so for `alice` it is never a retrieval
+candidate, nothing is there to mask, and the model's own refusal was all that
+answered. `customer-and-payment-data` now sits alongside `credential-disclosure`
+in `modules/bedrock-guardrail`, and a denied topic is evaluated on the input, so
+the request is refused whether or not the document was retrievable. Committed,
+**not yet applied** — it needs a `bedrock-ai` apply, which creates a new
+guardrail version, and the pod's `GUARDRAIL_VERSION` moves with it.
 
 **Still unbuilt, and it matters:** `--recreate` drops the index before it
 rebuilds it, so a failed reindex leaves the service answering nothing, and a

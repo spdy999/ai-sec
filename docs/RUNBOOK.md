@@ -289,7 +289,7 @@ What to show, in order:
 | `alice` (all-staff) | leave carry-over deadline | ordinary retrieval, sources cited |
 | `alice` | Q3 revenue forecast | no sources returned — the passage was never a candidate, not filtered afterwards |
 | `dana` (finance-team) | the same question | the same corpus answers, because entitlement changed and nothing else did |
-| anyone | summarise the customer records document | guardrail intervenes on the PII |
+| anyone | summarise the customer records document | guardrail intervenes: the `customer-and-payment-data` denied topic refuses the request before retrieval |
 | anyone | anything, with the token field emptied | 401 before any retrieval happens |
 
 Never run this against the default kubectl context: it is a real work cluster.
