@@ -70,10 +70,16 @@ data "aws_iam_policy_document" "mediation" {
       ],
     )
 
+    # The ARN, not the id. Bedrock populates bedrock:GuardrailIdentifier with
+    # the guardrail's full ARN even when the caller passes the bare id, so a
+    # condition written against the id never matches and every guarded call is
+    # refused with "no identity-based policy allows the bedrock:InvokeModel
+    # action" -- naming the model, saying nothing about the condition that
+    # actually failed.
     condition {
       test     = "StringEquals"
       variable = "bedrock:GuardrailIdentifier"
-      values   = [var.guardrail_id]
+      values   = [var.guardrail_arn]
     }
   }
 

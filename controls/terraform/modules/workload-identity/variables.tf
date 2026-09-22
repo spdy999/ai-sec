@@ -53,11 +53,6 @@ variable "model_routing_regions" {
   type        = list(string)
 }
 
-variable "guardrail_id" {
-  description = "Guardrail that must be attached to every model invocation."
-  type        = string
-}
-
 variable "guardrail_arn" {
   description = "Guardrail ARN, for ApplyGuardrail calls."
   type        = string
