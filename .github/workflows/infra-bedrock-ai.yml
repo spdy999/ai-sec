@@ -5,27 +5,11 @@
 
 name: infra bedrock-ai
 
-# Trunk based: a push to main that touches this layer applies it. The offline
-# gate chain has already run on the same commit in security.yml, and the policy
-# gate runs again here against the saved plan -- the bytes about to be applied,
-# not an offline approximation of them.
-#
-# This layer reads the platform layer's outputs, so a change spanning both wants
-# the platform push to land first; the shared concurrency lock makes them queue
-# rather than interleave, but it does not order them. `plan` remains available
-# by hand.
+# Dispatch only. A push to main applies through infra-provision.yml, which runs
+# the platform layer first -- this one reads its outputs, and applying it against
+# a platform layer that has not published them yet is how a variable reads empty
+# and a `count` silently resolves to zero.
 on:
-  push:
-    branches: [main]
-    paths:
-      - controls/terraform/bedrock-ai/**
-      - controls/data/corpus/**
-      - .github/scripts/tf-wire.sh
-      - controls/terraform/modules/**
-      - controls/policy/**
-      - .github/scripts/tf-config.sh
-      - .github/workflows/tf-reusable-workflow.yaml
-      - .github/workflows/infra-bedrock-ai.yml
   workflow_dispatch:
     inputs:
       action:
@@ -35,9 +19,9 @@ on:
         options: [plan, apply, destroy]
         default: apply
 
-# A push applies, so everything but an explicit plan contends for the live
-# account: one lock, and runs queue rather than race. Two applies at once is how
-# a layer ends up half one commit and half another.
+# An apply or a destroy contends for the live account, and shares the lock with
+# infra-provision.yml so a hand-run layer cannot overlap a push-driven one. A
+# plan changes nothing and gets its own lane.
 concurrency:
   group: ${{ inputs.action == 'plan' && format('genai-plan-{0}', github.workflow) || 'genai-platform-live' }}
   cancel-in-progress: ${{ inputs.action == 'plan' }}

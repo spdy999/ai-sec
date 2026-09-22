@@ -8,7 +8,25 @@
 
 name: infra provision
 
+# Change detection lands here rather than on the two callers, and that is the
+# whole point: a push that touches both layers would otherwise start both
+# workflows at once. The shared concurrency lock makes them queue, but queueing
+# is not ordering -- GitHub picks the winner, and picking the AI layer first is
+# how its egress rule silently counted to zero against a platform layer that had
+# not yet published the security group id it reads.
+#
+# One entry point, `needs` between the jobs, order guaranteed. The callers stay
+# for re-running a single layer by hand.
 on:
+  push:
+    branches: [main]
+    paths:
+      - controls/terraform/**
+      - controls/policy/**
+      - .github/scripts/tf-config.sh
+      - .github/scripts/tf-wire.sh
+      - .github/workflows/tf-reusable-workflow.yaml
+      - .github/workflows/infra-provision.yml
   workflow_dispatch:
 
 concurrency:
