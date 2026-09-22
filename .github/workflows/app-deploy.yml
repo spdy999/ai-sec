@@ -123,6 +123,15 @@ jobs:
           set -euo pipefail
           cat > /tmp/apply.sh <<EOF
           set -eu
+
+          # Every AWS call from this host must name a region. Unregioned, the
+          # CLI resolves S3 through the global endpoint, which a VPC with no
+          # internet gateway cannot route -- so the call hangs instead of
+          # failing, and the run sits at "in progress" until something upstream
+          # gives up.
+          export AWS_DEFAULT_REGION=${{ env.AWS_REGION }}
+          export AWS_REGION=${{ env.AWS_REGION }}
+
           workdir="\$(mktemp -d)"
           trap 'rm -rf "\$workdir"' EXIT
           cd "\$workdir"

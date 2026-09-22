@@ -23,7 +23,12 @@ script_file="${2:?script file required}"
 # intact.
 params="$(mktemp)"
 trap 'rm -f "${params}"' EXIT
-jq -Rs '{commands: [.]}' <"${script_file}" >"${params}"
+#
+# executionTimeout bounds the script on the host. Without it a command that
+# hangs -- an AWS call with no route, most likely -- stays InProgress for an
+# hour while the workflow waits, and the run reads as slow rather than stuck.
+jq -Rs --arg t "${SSM_EXECUTION_TIMEOUT:-900}" \
+  '{commands: [.], executionTimeout: [$t]}' <"${script_file}" >"${params}"
 
 command_id="$(aws ssm send-command \
   --instance-ids "${instance}" \
