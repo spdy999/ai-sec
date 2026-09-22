@@ -202,6 +202,7 @@ module "workload_identity" {
   approved_model_ids    = var.approved_model_ids
   account_id            = var.account_id
   chat_model_id         = var.chat_model_id
+  embedding_model_id    = var.embedding_model_id
   model_routing_regions = var.model_routing_regions
   guardrail_id          = module.guardrail.guardrail_id
   guardrail_arn         = module.guardrail.guardrail_arn

@@ -66,7 +66,7 @@ data "aws_iam_policy_document" "mediation" {
       [
         for model_id in var.approved_model_ids :
         "arn:aws:bedrock:${var.region}::foundation-model/${model_id}"
-        if model_id != local.chat_foundation_model_id
+        if model_id != local.chat_foundation_model_id && model_id != var.embedding_model_id
       ],
     )
 
@@ -75,6 +75,19 @@ data "aws_iam_policy_document" "mediation" {
       variable = "bedrock:GuardrailIdentifier"
       values   = [var.guardrail_id]
     }
+  }
+
+  # Embedding the question is the one model call a guardrail cannot cover.
+  # InvokeModel for an embedding model takes no GuardrailIdentifier, so the
+  # statement above -- which requires one -- can never match it, and the call is
+  # denied with no hint that a condition was the reason. It is granted here
+  # instead, on the embedding model alone: no prompt is generated and no text
+  # comes back, only a vector, so there is nothing for a guardrail to filter.
+  statement {
+    sid       = "EmbedTheQuestion"
+    effect    = "Allow"
+    actions   = ["bedrock:InvokeModel"]
+    resources = ["arn:aws:bedrock:${var.region}::foundation-model/${var.embedding_model_id}"]
   }
 
   # Used by the guardrail test harness to score an injection corpus without

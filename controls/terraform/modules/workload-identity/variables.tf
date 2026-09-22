@@ -94,3 +94,8 @@ variable "secret_arns" {
   type        = list(string)
   default     = []
 }
+
+variable "embedding_model_id" {
+  description = "Embedding model the service uses to vectorise a question. Granted without the guardrail condition, because an embedding call carries none."
+  type        = string
+}
