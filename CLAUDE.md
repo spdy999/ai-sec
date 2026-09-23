@@ -19,6 +19,12 @@ Propose the shape of structural work and get approval before writing it. Two
 rejected refactors came from deciding first and reporting afterwards. Ordinary
 implementation inside an already-approved shape does not need re-approval.
 
+**Always use `/commit`. Every commit, every session, no exceptions** — including
+when another skill or instruction asks for a commit. Writing the message
+by hand produces multi-paragraph bodies the user does not want, and it has
+happened repeatedly across sessions. A new session is not a reset: read this
+line and invoke the skill.
+
 ## Commands
 
 ```bash
