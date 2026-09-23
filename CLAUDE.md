@@ -893,13 +893,21 @@ baselined, CloudTrail latency). `risk-assessment.md` carries **Component** and
 alarms. The summary is 2,355 words, near the five-page ceiling — if it runs
 over, §5's limitations list overlaps §3.6 and can lose two sentences.
 
-`Slides.md` is partly reconciled as of 2026-09-23. Its "Live" slide now carries
-the five real captured responses and its six-decision-point table matches what
-the service does (it claimed input-side PII masking and citation verification,
-neither of which exists); the invented payroll-API tool denial is gone. Still
-stale: line 243 "offline — no AWS account, no cost", line 429, and five places
-selling a tool allow-list and tool-denial detections that were never built
-(167, 182, 202, 372, 456).
+`Slides.md` was reconciled with the deployed system on 2026-09-23. The "Live"
+slide carries the five real captured responses; the six-decision-point table
+matches what the service does (it claimed input-side PII masking and citation
+verification, neither of which exists); the risk table is the five risks from
+`risk-assessment.md`; the detections slide is the three deployed ones with their
+real sources and thresholds, replacing five invented ones and a speaker note
+about Sigma rules converted to SPL that were never written; the Kubernetes slide
+shows `make k8s-demo` and `make policy-negative` output and no longer claims a
+manual approval gate, which needs a paid plan; the validation table says what
+does and does not need an account instead of "$0" on every row and a `pytest`
+suite and `botocore` stub that do not exist; limitations name the alarm's
+missing identity and the default content-filter tier; and every claim about
+tools — a tool allow-list, tool-denial detections, tool decision separated from
+execution — is gone, since there are no tools. Render with
+`npx @marp-team/marp-cli@latest Slides.md --pdf --allow-local-files`.
 
 **The design summary now answers all five §2.2 bullets.** Added on 2026-09-23:
 tool authorization and input/output validation in §3.2, environment separation
