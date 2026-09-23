@@ -38,7 +38,7 @@ permissions:
 env:
   AWS_REGION: eu-central-1
   TF_VERSION: "1.14.8"
-  KUBECTL_VERSION: v1.31.3
+  KUBECTL_VERSION: v1.36.4
   TF_EKS: controls/terraform/eks-platform
   TF_AI: controls/terraform/bedrock-ai
 
