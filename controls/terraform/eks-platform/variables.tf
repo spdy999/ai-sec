@@ -59,7 +59,7 @@ variable "private_subnet_cidrs" {
 variable "kubernetes_version" {
   description = "EKS control plane version."
   type        = string
-  default     = "1.31"
+  default     = "1.36"
 }
 
 variable "node_instance_type" {
