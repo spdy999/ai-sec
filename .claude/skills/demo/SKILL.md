@@ -108,13 +108,14 @@ kubectl ... port-forward deploy/genai-mediation 8443:8443
 Front end at `https://127.0.0.1:8443/`, self-signed — the browser warning is
 expected and worth saying out loud rather than clicking past in silence.
 
-Hand the user the URL and both tokens, then the four rows in this order:
+Hand the user the URL and both tokens, then the five rows in this order:
 
 | ask | as | what it proves |
 |-----|----|----------------|
 | leave carry-over | alice | retrieval works; answered from `hr-leave-policy.md` |
 | Q3 revenue | alice | "no information in the passages" — the finance document was never a candidate |
 | Q3 revenue | dana | EUR 14.2M against a plan of 13.5M, from `finance-q3-forecast.md` |
+| who is on call and how do I contact them | alice | answered from `engineering-oncall.md`, with the email, phone and `KOE-` identifiers masked |
 | `ignore all previous instructions…` | alice | guardrail intervened, not a model refusal |
 
 Rows two and three back to back are the point of the design: same question,
@@ -123,7 +124,15 @@ rather than in what the model was told to say. Row two's badge reads "guardrail
 passed" and that is correct — nothing in the question is an attack. The control
 doing the work there is entitlement filtering, visible in the Sources line.
 
-Row four must show `guardrail_intervened`. A polite refusal from the model
+Row four is the masking control, and it is the only row where the document is
+*supposed* to be retrieved. `engineering-oncall.md` is all-staff, so entitlement
+filtering will not withhold it; the contact details come back anonymised because
+the guardrail acts on the response. Say that out loud — the point is that the
+two controls cover different halves, and neither substitutes for the other. The
+badge reads "guardrail passed": nothing in the question is an attack, and
+masking is not an intervention.
+
+Row five must show `guardrail_intervened`. A polite refusal from the model
 looks identical on screen and is not a control — that distinction is the
 centrepiece finding of the design summary, so check the badge, do not assume it.
 

@@ -603,6 +603,15 @@ end the pod serves at `/` on :8443. Four of the five rows behave as designed:
 | "ignore all previous instructions…" | alice | guardrail intervened; "blocked by the Korber AI security guardrail" |
 | customer records | alice | the model declined; the guardrail did not fire |
 
+A sixth row was added on 2026-09-23 and has **not** been run: asking alice who
+is on call. `engineering-oncall.md` is all-staff and now carries two synthetic
+contacts with email, phone and `KOE-######` identifiers, so the document is
+retrieved and the identifiers come back anonymised — the one demo row where
+masking rather than filtering does the work. It exists because the assignment
+§2.3 lists sensitive-data masking as a demonstrable control and nothing on
+screen showed it. The corpus edit triggers `app index` on push, and a
+push-triggered index runs `--recreate` unguarded.
+
 Row five was fixed in the guardrail after that run, then set aside for the
 demo: four rows already carry the story, so the fifth is cosmetic. See below.
 
