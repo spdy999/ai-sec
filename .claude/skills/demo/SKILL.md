@@ -7,7 +7,9 @@ The full story in one run: **the gates refuse bad config**, then **the live
 service answers differently for two identities and blocks an injection**, then
 **a detection notices and delivers a message**.
 
-Read `docs/RUNBOOK.md` §5 and §7d for the underlying mechanics. This skill is
+Read the runbook's [Presentation demo](../../../docs/RUNBOOK.md#5-presentation-demo)
+and [The five manual minutes](../../../docs/RUNBOOK.md#7d-the-five-manual-minutes)
+for the underlying mechanics. This skill is
 the sequence, the preflight that stops it wasting a rehearsal, and the cleanup.
 
 ## Arguments

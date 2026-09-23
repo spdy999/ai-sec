@@ -67,8 +67,9 @@ may not be yours.
 
 ## 4. Real AWS deploy
 
-Two ways in: the pipeline (§4a, normal) and by hand (§4b, for when the pipeline
-is not an option). Both deploy for real, in `eu-central-1`, at roughly $17/day
+Two ways in: [the pipeline](#4a-through-the-pipeline), normal, and
+[by hand](#4b-by-hand), for when the pipeline
+is not an option. Both deploy for real, in `eu-central-1`, at roughly $17/day
 (71% OpenSearch Serverless). There is still no `apply`/`destroy` Makefile
 target on purpose — don't add one without asking.
 
@@ -135,7 +136,8 @@ changes, and because the OIDC subject depends on it.
 
 ### 4b. By hand
 
-State is local in this path, so it is not interchangeable with §4a — pick one
+State is local in this path, so it is not interchangeable with
+[the pipeline](#4a-through-the-pipeline) — pick one
 and stay with it for the life of a deployment.
 
 ```bash
@@ -158,7 +160,8 @@ terraform -chdir=controls/terraform/bedrock-ai apply \
 
 **Teardown is a decision, not a habit.** The stack is left up between
 sessions on purpose and costs roughly $17/day; nothing is destroyed without an
-explicit instruction. When that instruction comes, follow §7 — or, in this
+explicit instruction. When that instruction comes, follow
+[Teardown and rebuild](#7-teardown-and-rebuild) — or, in this
 by-hand path, `terraform destroy` on both roots, bedrock-ai first, then
 eks-platform. `pipeline-iam` is never part of a teardown: the state bucket, its
 CMK and the deploy role survive, because the next deployment needs them.
@@ -333,7 +336,8 @@ ECR repository, trail.
 Survives, and rebuild depends on it:
 
 - `pipeline-iam` — the OIDC provider and the deploy role. Separate root, local
-  state, never dispatched. Destroy it and the one-time setup in §4a has to be
+  state, never dispatched. Destroy it and the
+  [one-time setup](#4a-through-the-pipeline) has to be
   redone from a laptop with admin credentials.
 - The Terraform **state bucket**. The destroy writes empty state into it.
 - Actions variables `TF_STATE_BUCKET`, `AWS_DEPLOY_ROLE_ARN`,
@@ -451,7 +455,8 @@ Why each wait matters:
 ### 7d. The five manual minutes
 
 ```bash
-# a shell on the jump host, then the API server through it — see §5a
+# a shell on the jump host, then the API server through it
+# see "Reaching the live platform" above
 aws ssm start-session --target <instance-id> \
   --document-name AWS-StartPortForwardingSessionToRemoteHost \
   --parameters host="<api server hostname>",portNumber=443,localPortNumber=6443
@@ -469,6 +474,8 @@ and ingestion roles, so a laptop with administrator credentials cannot read it.
 A deploy replaces the pods and silently kills the port-forward — restart it
 rather than debugging an empty response.
 
-Then the four demo rows in §5, in order. The injection row is the one that
+Then the demo rows in
+[Reaching the live platform](#5a-reaching-the-live-platform), in order. The
+injection row is the one that
 proves the rebuild is genuinely finished: `stopReason: guardrail_intervened`,
 not a polite refusal from the model.

@@ -22,8 +22,8 @@ make ci     # the gate chain the pipeline enforces
 
 | Path | Needs | Time | What you see |
 |---|---|---|---|
-| **Offline** — §3 | `terraform`, `conftest`, `jq`, `python3` | ~15 s | the gates accepting the secure layers and refusing the insecure ones |
-| **Live** — §5 | an AWS account, a GitHub repository, ~$17/day | ~30 min | the front end answering two identities differently and blocking an injection |
+| [**Offline**](#3-offline-validation) | `terraform`, `conftest`, `jq`, `python3` | ~15 s | the gates accepting the secure layers and refusing the insecure ones |
+| [**Live**](#5-from-zero-to-a-live-answer) | an AWS account, a GitHub repository, ~$17/day | ~30 min | the front end answering two identities differently and blocking an injection |
 
 The offline path is the whole policy argument and costs nothing. The live path
 is the only way to see the guardrail, entitlement filtering and PII masking act
@@ -66,7 +66,7 @@ Repository **variables**:
 
 | Variable | Value |
 |---|---|
-| `TF_STATE_BUCKET` | the state bucket, from the one-time apply in §5.1 |
+| `TF_STATE_BUCKET` | the state bucket, from the [one-time apply](#51-one-time-from-a-laptop-with-admin-credentials) |
 | `TF_STATE_REGION` | `eu-central-1` |
 | `TF_STATE_KMS_KEY_ARN` | the CMK encrypting that bucket |
 | `AWS_DEPLOY_ROLE_ARN` | the deploy role, from the same apply |
@@ -106,7 +106,7 @@ one. Merged, the cluster's OIDC issuer URL is unknown at plan time, which makes
 the whole IRSA trust policy unknown, which makes the rule that checks it stop
 firing silently. A control that cannot see its input is not a control.
 
-## 3. Validation — the offline path
+## 3. Offline validation
 
 No AWS account, no podman, no cost. This is what CI runs.
 
@@ -146,7 +146,7 @@ a pair whose other half is "absent entirely": a plan cannot simultaneously have
 no flow log and have one with the wrong traffic type. They are covered by
 inspection of their twin.
 
-## 4. Validation — the local cluster
+## 4. Local cluster validation
 
 Needs podman running. Proves that a real API server, not a linter, refuses the
 insecure workloads.
@@ -177,14 +177,15 @@ assumes. Nothing else in this repository runs with a human's credentials.
 cd controls/terraform/pipeline-iam
 cp terraform.tfvars.example terraform.tfvars   # bucket name, GitHub owner/repo and their numeric IDs
 terraform init && terraform apply
-terraform output                                # the values for the repository variables in §1
+terraform output                                # the values for the repository variables above
 ```
 
 The numeric IDs matter: GitHub issues an ID-qualified OIDC subject
 (`repo:owner@<id>/repo@<id>:environment:production`) so that a rename cannot
 transfer trust. The trust policy accepts both that and the legacy form.
 
-Then set the repository variables and create the `production` environment (§1).
+Then set the [repository variables](#github-repository-for-the-live-path) and
+create the `production` environment.
 
 ### 5.2 The infrastructure — about 19 minutes
 
@@ -365,8 +366,9 @@ aws sqs receive-message --queue-url "$QUEUE" --wait-time-seconds 20 \
 ### 5.8 Teardown
 
 Not a habit — the stack is designed to be left up between sessions.
-`docs/RUNBOOK.md` §7 covers what survives, how to confirm the account is
-actually empty, and the rebuild chain.
+[Teardown and rebuild](docs/RUNBOOK.md#7-teardown-and-rebuild) in the runbook
+covers what survives, how to confirm the account is actually empty, and the
+rebuild chain.
 
 ```bash
 gh workflow run infra-destroy.yml -f confirm=destroy
@@ -396,8 +398,10 @@ Stated because they bound what the implementation can claim.
 - **All sample data is synthetic.** The corpus, the employee identifiers, the
   contact details and the revenue figures are invented. The account IDs and OIDC
   issuers in committed examples are placeholders and refer to nothing.
-- **The reviewer has an AWS account with Bedrock enabled.** Without one, §3 and
-  §4 still run in full; §5 does not.
+- **The reviewer has an AWS account with Bedrock enabled.** Without one, the
+  [offline](#3-offline-validation) and
+  [local cluster](#4-local-cluster-validation) validation still run in
+  full; [the live path](#5-from-zero-to-a-live-answer) does not.
 - **Cost is accepted at roughly $17/day**, about two thirds of it OpenSearch
   Serverless, which has no idle tier.
 
@@ -481,7 +485,8 @@ the evasive one.
 
 ## 8. When it breaks
 
-`docs/RUNBOOK.md` §6 is the troubleshooting table — the offline-plan credential
+The runbook's [troubleshooting table](docs/RUNBOOK.md#6-troubleshooting) covers
+the offline-plan credential
 traps, `for_each` over unknown values, the coverage gate refusing a new rule,
 the OIDC subject mismatch, held state locks, and the podman `krunkit` PATH trap.
 `CLAUDE.md` carries the longer findings, each one written down the first time it
