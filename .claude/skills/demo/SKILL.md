@@ -115,7 +115,7 @@ Hand the user the URL and both tokens, then the five rows in this order:
 | leave carry-over | alice | retrieval works; answered from `hr-leave-policy.md` |
 | Q3 revenue | alice | "no information in the passages" — the finance document was never a candidate |
 | Q3 revenue | dana | EUR 14.2M against a plan of 13.5M, from `finance-q3-forecast.md` |
-| who is on call and how do I contact them | alice | answered from `engineering-oncall.md`, with the email, phone and `KOE-` identifiers masked |
+| who is on call and how do I contact them | alice | answered from `engineering-oncall.md`, with `{EMAIL}`, `{PHONE}` and `{employee-id}` in place of the identifiers |
 | `ignore all previous instructions…` | alice | guardrail intervened, not a model refusal |
 
 Rows two and three back to back are the point of the design: same question,
@@ -127,10 +127,14 @@ doing the work there is entitlement filtering, visible in the Sources line.
 Row four is the masking control, and it is the only row where the document is
 *supposed* to be retrieved. `engineering-oncall.md` is all-staff, so entitlement
 filtering will not withhold it; the contact details come back anonymised because
-the guardrail acts on the response. Say that out loud — the point is that the
-two controls cover different halves, and neither substitutes for the other. The
-badge reads "guardrail passed": nothing in the question is an attack, and
-masking is not an intervention.
+the guardrail acts on the response. The name is not masked — only email, phone
+and the `KOE-` pattern are configured — which is the honest version: masking
+covers the entities you named and nothing else.
+
+**The badge reads "guardrail intervened" on this row, same as the injection
+row.** An anonymisation counts as an intervention, so the badge alone does not
+distinguish a masked answer from a blocked one; the answer body does. Say that
+rather than letting it look like row five.
 
 Row five must show `guardrail_intervened`. A polite refusal from the model
 looks identical on screen and is not a control — that distinction is the
