@@ -51,10 +51,10 @@ variable "telemetry_period_seconds" {
   default     = 60
 }
 
-variable "fleet_guardrail_threshold" {
-  description = "Fleet-wide interventions in one period before the low-severity alarm fires. Well above the per-subject threshold the service enforces, because this signal is a trend and not an incident: attribution to one caller is the service's job, not CloudWatch's."
+variable "guardrail_intervention_threshold" {
+  description = "Interventions in one period before the alarm fires. Above one, because a single block is the control working as designed and paging on it trains people to ignore the alert."
   type        = number
-  default     = 20
+  default     = 3
 }
 
 variable "authorization_refusal_threshold" {

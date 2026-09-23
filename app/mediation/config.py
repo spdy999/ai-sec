@@ -91,14 +91,3 @@ else:
 JWT_ISSUER = os.environ.get("IDENTITY_TOKEN_ISSUER", "genai-assistant-demo")
 
 TOP_K = int(os.environ.get("RETRIEVAL_TOP_K", "4"))
-
-# Per-subject guardrail abuse detection. The window matches the alarm's period
-# so a burst that fires the alarm is the same burst this counted. The threshold
-# is above one because a single block is the control working as designed.
-ABUSE_WINDOW_SECONDS = int(os.environ.get("ABUSE_WINDOW_SECONDS", "60"))
-ABUSE_THRESHOLD = int(os.environ.get("ABUSE_THRESHOLD", "3"))
-
-# How long a subject stays refused after crossing. Long enough that continuing
-# by hand is pointless, short enough that a colleague who tripped it three
-# times by accident is not locked out for the afternoon.
-ABUSE_BLOCK_SECONDS = int(os.environ.get("ABUSE_BLOCK_SECONDS", "300"))
