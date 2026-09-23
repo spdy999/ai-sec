@@ -4,50 +4,21 @@ An internal RAG assistant on AWS Bedrock and EKS, implemented as infrastructure
 code with the security controls enforced by a policy gate rather than described
 in a document.
 
-The policy gate runs offline and free: `terraform plan` renders the
-infrastructure graph with mock credentials, and the policy engine reads that
-graph as a file — no AWS account touched for CI.
+Everything here runs on AWS. Infrastructure is applied by GitHub Actions
+federating with OIDC — there is no long-lived access key anywhere — and the
+policy gate runs inside the same pipeline, against the plan that is about to be
+applied. The deployment costs roughly $17/day in `eu-central-1`, about two
+thirds of it OpenSearch Serverless.
 
-The demo itself deploys for real. `terraform apply` runs against a real AWS
-account in `eu-central-1`, at the tuned cost defaults in
-`controls/terraform/README.md` (roughly $17/day, mostly OpenSearch
-Serverless).
-
-```bash
-make demo   # the walkthrough: plan, pass, fail, coverage   (~15s)
-make ci     # the gate chain the pipeline enforces
-```
-
-## Two ways to run this
-
-| Path | Needs | Time | What you see |
-|---|---|---|---|
-| [**Offline**](#3-offline-validation) | `terraform`, `conftest`, `jq`, `python3` | ~15 s | the gates accepting the secure layers and refusing the insecure ones |
-| [**Live**](#5-from-zero-to-a-live-answer) | an AWS account, a GitHub repository, ~$17/day | ~30 min | the front end answering two identities differently and blocking an injection |
-
-The offline path is the whole policy argument and costs nothing. The live path
-is the only way to see the guardrail, entitlement filtering and PII masking act
-on a real answer.
+| | |
+|---|---|
+| [**Deploy it**](#3-from-zero-to-a-live-answer) | one-time IAM setup, then four workflow dispatches, about 30 minutes |
+| [**Ask it something**](#4-testing-the-prompts) | five questions that each prove a different control |
+| [**What is proven**](#5-what-is-proven-and-how) | the gates, and what each one refuses |
 
 ## 1. Prerequisites
 
-### Local tools
-
-| Tool | Needed for | Notes |
-|---|---|---|
-| `terraform` | plan, policy, everything | |
-| `conftest` | the policy gates | |
-| `jq` | resource counts and gate output | |
-| `python3` | `make policy-coverage` | |
-| `kind` 0.33+, `kubectl`, `helm` | the local cluster targets | |
-| podman, running | the local cluster targets | `/opt/podman/bin` must be on `PATH` for `krunkit` |
-| `gh` | dispatching the deploy workflows | live path only |
-| AWS CLI + Session Manager plugin | reaching the private cluster | live path only |
-
-The offline targets need none of the AWS credentials — `providers.tf` injects
-mock keys when `offline_plan = true`, which is the default.
-
-### AWS account, for the live path
+### The AWS account
 
 - **Bedrock model access enabled in `eu-central-1`** for Anthropic Claude and
   Titan embeddings. Anthropic models are invocable only through an inference
@@ -56,20 +27,21 @@ mock keys when `offline_plan = true`, which is the default.
   `eu-central-1`, `eu-west-1`, `eu-west-3`, `eu-north-1`, `eu-south-1`,
   `eu-south-2`. The last two are opt-in; `aws account enable-region` takes a few
   minutes and costs nothing. A request routed to a disabled region fails.
-- Credentials that can create IAM. If you use `aws-vault`, pass `--no-session`:
-  without it IAM refuses the call with `InvalidClientTokenId` while
-  `sts:GetCallerIdentity` still succeeds, so the credentials look fine.
+- Credentials that can create IAM, for the one-time setup only. If you use
+  `aws-vault`, pass `--no-session`: without it IAM refuses the call with
+  `InvalidClientTokenId` while `sts:GetCallerIdentity` still succeeds, so the
+  credentials look fine.
 
-### GitHub repository, for the live path
+### The GitHub repository
 
 Repository **variables**:
 
 | Variable | Value |
 |---|---|
-| `TF_STATE_BUCKET` | the state bucket, from the [one-time apply](#51-one-time-from-a-laptop-with-admin-credentials) |
+| `TF_STATE_BUCKET` | the state bucket, from the [one-time setup](#31-one-time-setup) |
 | `TF_STATE_REGION` | `eu-central-1` |
 | `TF_STATE_KMS_KEY_ARN` | the CMK encrypting that bucket |
-| `AWS_DEPLOY_ROLE_ARN` | the deploy role, from the same apply |
+| `AWS_DEPLOY_ROLE_ARN` | the deploy role, from the same setup |
 | `CLUSTER_ADMIN_ARNS` | comma-separated IAM principals granted EKS cluster admin |
 | `COST_ALERT_EMAIL` | budget notifications |
 | `SECURITY_ALERT_EMAIL` | alarm notifications; falls back to `COST_ALERT_EMAIL` |
@@ -80,9 +52,16 @@ without the environment block cannot assume the role.
 
 `CLUSTER_ADMIN_ARNS` is not optional in practice. The cluster is created with
 `bootstrap_cluster_creator_admin_permissions` off, so nobody inherits admin from
-having run the apply. Leave it unset and `kubectl` answers `Unauthorized` and
+having run the apply. Leave it unset and `kubectl` answers `Unauthorized`, and
 fixing it needs another apply. The principal has to be the one you actually sign
 in as — an entry for a user does not cover a role you assume.
+
+### To drive it from a workstation
+
+`gh` to dispatch the workflows, and the AWS CLI with the Session Manager plugin
+plus `kubectl` to reach the cluster. Nothing else is installed anywhere: the
+pipeline owns Terraform, the policy engine and the image build, and the jump
+host receives the artefacts it needs over Session Manager.
 
 ## 2. What is here
 
@@ -92,12 +71,12 @@ controls/terraform/
   bedrock-ai/         root: what code does    - Bedrock, guardrail, corpus, vectors, identity
   modules/            twelve reusable modules, each with its own README
   fixtures/insecure/  deliberately broken config the gate must reject
-  pipeline-iam/       root: run by hand - the OIDC provider and the role Actions assumes
+  pipeline-iam/       root: run once by hand - the OIDC provider and the role Actions assumes
 controls/policy/      81 Rego rules, applied to Terraform plans AND Kubernetes YAML
 controls/kubernetes/  base manifests, Kyverno policies, and manifests that must be refused
-controls/data/corpus/ six synthetic markdown documents
+controls/data/corpus/ six synthetic markdown documents, uploaded by the AI layer
 app/                  the only custom code: the mediation service and its React front-end
-.github/workflows/    the CI gate chain, the infra workflows and the app workflows
+.github/workflows/    the gate chain, the infrastructure workflows and the application workflows
 docs/RUNBOOK.md       operational detail: every command, and what to do when it breaks
 ```
 
@@ -106,72 +85,17 @@ one. Merged, the cluster's OIDC issuer URL is unknown at plan time, which makes
 the whole IRSA trust policy unknown, which makes the rule that checks it stop
 firing silently. A control that cannot see its input is not a control.
 
-## 3. Offline validation
-
-No AWS account, no podman, no cost. This is what CI runs.
-
-```bash
-make plan             # render the AI layer to plan.json with mock credentials
-make policy           # the secure layers pass all 81 rules
-make policy-negative  # the insecure fixture must FAIL — a clean run is itself a failure
-make policy-k8s       # the workload manifests pass
-make policy-k8s-negative  # the bad manifests must FAIL
-make policy-coverage  # every rule must fire against a fixture
-make ci               # all of the above, in the order the pipeline runs it
-make demo             # the presentation walkthrough: pass, then fail, then verdict
-```
-
-Every control is validated by proving it **rejects** bad input, never only that
-it accepts good input.
-
-| Claim | Proof | Command |
-|---|---|---|
-| The AI layer satisfies every rule, offline | 81 rules, 0 violations | `make policy` |
-| The platform layer satisfies every rule | 81 rules against the plan being applied | deploy pipeline, `make policy-plan` |
-| The gate refuses insecure infrastructure | 60 violations found in the fixture | `make policy-negative` |
-| The gate refuses insecure workloads | 29 violations found in `bad/` | `make policy-k8s-negative` |
-| No rule is decorative | 77 of 81 rules proven to fire; 4 exempt, each named | `make policy-coverage` |
-| A real cluster enforces admission | four manifests refused by the API server | `make k8s-demo` |
-| Default-deny egress actually blocks | a packet sent before and after the policy | `make netpol-proof` |
-
-The coverage gate is the one worth explaining. A rule that has never rejected
-anything has not been tested, and a Rego rule that inspects the wrong path
-passes silently forever. `make policy-coverage` walks every `deny` in the policy
-directory and fails the build unless that rule's message appears in the output
-of a negative fixture.
-
-Four rules are exempt and the exemption is itself checked — if one ever does
-fire, the build fails as stale. Each is the "present but misconfigured" half of
-a pair whose other half is "absent entirely": a plan cannot simultaneously have
-no flow log and have one with the wrong traffic type. They are covered by
-inspection of their twin.
-
-## 4. Local cluster validation
-
-Needs podman running. Proves that a real API server, not a linter, refuses the
-insecure workloads.
-
-```bash
-make kind-up       # create the local cluster
-make k8s-demo      # base manifests + Kyverno, then four bad manifests refused
-make netpol-proof  # a packet sent before and after default-deny egress
-make kind-down
-```
-
-Every `kubectl` call in the Makefile pins `--context kind-koerber-demo`
-deliberately. The `bad/` manifests are privileged on purpose — never run them
-against a current-context you have not checked.
-
-## 5. From zero to a live answer
+## 3. From zero to a live answer
 
 Roughly 30 minutes from an empty account, most of it waiting on EKS. Each step
 waits for the previous one to be **green**, not merely started: the order is a
 dependency chain, not a preference.
 
-### 5.1 One-time, from a laptop with admin credentials
+### 3.1 One-time setup
 
 Creates the state bucket, its CMK, the GitHub OIDC provider and the role Actions
-assumes. Nothing else in this repository runs with a human's credentials.
+assumes. This is the only thing in the repository that runs with a human's
+credentials, and it runs once.
 
 ```bash
 cd controls/terraform/pipeline-iam
@@ -184,25 +108,27 @@ The numeric IDs matter: GitHub issues an ID-qualified OIDC subject
 (`repo:owner@<id>/repo@<id>:environment:production`) so that a rename cannot
 transfer trust. The trust policy accepts both that and the legacy form.
 
-Then set the [repository variables](#github-repository-for-the-live-path) and
-create the `production` environment.
+Then set the [repository variables](#the-github-repository) and create the
+`production` environment.
 
-### 5.2 The infrastructure — about 19 minutes
+### 3.2 The infrastructure — about 19 minutes
 
 ```bash
 gh workflow run infra-provision.yml
 gh run watch <run-id> --exit-status --interval 30
 ```
 
-One workflow, both layers, `eks-platform` then `bedrock-ai`, with the gate chain
-running *inside* the applying run rather than beside it. It generates the S3
-backend and the real tfvars at run time and reads the platform layer's applied
-outputs into the AI layer, so no value is hand-copied between them.
+One workflow, both layers, `eks-platform` then `bedrock-ai`, with the policy
+gate running *inside* the applying run rather than beside it — the rules read
+the saved plan immediately before it is applied, so the bytes the gate inspects
+are the bytes that run. It generates the S3 backend and the real tfvars at run
+time and reads the platform layer's applied outputs into the AI layer, so no
+value is hand-copied between them.
 
 A push to `main` that touches `controls/terraform/**` triggers the same
 workflow. The two single-layer workflows are dispatch-only.
 
-### 5.3 The secret material — about 1 minute
+### 3.3 The secret material — about 1 minute
 
 ```bash
 gh workflow run app-secrets.yml -f confirm=rotate
@@ -218,26 +144,26 @@ Terraform never sees their values, because there is deliberately no
 `confirm=rotate` is required and easy to forget; a bare dispatch fails with HTTP
 422.
 
-### 5.4 The application — about 4 minutes
+### 3.4 The application — about 4 minutes
 
 ```bash
 gh workflow run app-release.yml
 gh run watch <run-id> --exit-status --interval 20
 ```
 
-Builds and pushes the image on a runner (the jump host has no route to the
-internet and cannot pull a base image), then renders the manifests from applied
-state, runs the policy gate over the **rendered** output — substituting real
-identifiers is the step that could introduce a violation — stages them with a
+Builds and pushes the image on a runner — the jump host has no route to the
+internet and cannot pull a base image — then renders the manifests from applied
+state, runs the policy gate over the **rendered** output (substituting real
+identifiers is the step that could introduce a violation), stages them with a
 `kubectl` binary in the state bucket, and has the jump host apply them over
 Session Manager. Nothing downstream refers to an image tag; the digest travels
 between the two halves.
 
-Must come after 5.3: the pod reads both secrets at startup with its own IRSA
+Must come after 3.3: the pod reads both secrets at startup with its own IRSA
 credentials, so deploying first crash-loops on a secret that does not exist and
 the rollout fails on a timeout rather than on the real reason.
 
-### 5.5 The vector index — about 1 minute
+### 3.5 The vector index — about 1 minute
 
 ```bash
 gh workflow run app-index.yml -f confirm=index
@@ -257,7 +183,7 @@ Expect `indexed 16 passages from 6 documents`. Allow about a minute afterwards
 before asking anything — OpenSearch Serverless returns `sources: []` until the
 new index settles.
 
-### 5.6 Reaching the front end — about 5 minutes by hand
+### 3.6 Reaching the front end — about 5 minutes
 
 There is no public endpoint anywhere in this design: the API server is private,
 the nodes are in private subnets, there is no internet gateway and no SSH. Two
@@ -297,7 +223,7 @@ kubectl --kubeconfig ~/.kube/koerber-live.yaml --context koerber-live \
 
 Two `genai-mediation` pods, `1/1 Ready`. Mint the two demo identities **in the
 pod** — the signing key's resource policy denies every principal but the
-workload and ingestion roles, so a laptop holding administrator credentials
+workload and ingestion roles, so a workstation holding administrator credentials
 cannot read it:
 
 ```bash
@@ -314,7 +240,21 @@ is expected. Paste a token into the identity field and ask.
 A deploy replaces the pods and silently kills the port-forward. Restart it
 rather than debugging an empty response.
 
-### 5.7 Testing the prompts
+### 3.7 Teardown
+
+Not a habit — the stack is designed to be left up between sessions.
+[Teardown and rebuild](docs/RUNBOOK.md#7-teardown-and-rebuild) in the runbook
+covers what survives, how to confirm the account is actually empty, and the
+rebuild chain.
+
+```bash
+gh workflow run infra-destroy.yml -f confirm=destroy
+```
+
+`pipeline-iam` is never part of a teardown: the state bucket, its CMK and the
+deploy role survive, because the next deployment needs them.
+
+## 4. Testing the prompts
 
 Five questions, in this order. These are the responses actually captured on
 2026-09-23 against the live account.
@@ -363,19 +303,41 @@ aws sqs receive-message --queue-url "$QUEUE" --wait-time-seconds 20 \
   --query 'Messages[].Body' --output text | jq -r '.Message | fromjson'
 ```
 
-### 5.8 Teardown
+## 5. What is proven, and how
 
-Not a habit — the stack is designed to be left up between sessions.
-[Teardown and rebuild](docs/RUNBOOK.md#7-teardown-and-rebuild) in the runbook
-covers what survives, how to confirm the account is actually empty, and the
-rebuild chain.
+Every control is validated by proving it **rejects** bad input, never only that
+it accepts good input. All of it runs in the pipeline; none of it is a claim
+about a workstation.
 
-```bash
-gh workflow run infra-destroy.yml -f confirm=destroy
-```
+| Claim | Proof | Where it runs |
+|---|---|---|
+| The AI layer satisfies every rule | 81 rules, 0 violations | `security.yml`, infrastructure policy gate |
+| The platform layer satisfies every rule | 81 rules against the saved plan, immediately before it is applied | `infra-provision.yml` |
+| The gate refuses insecure infrastructure | 60 violations found in the deliberately broken fixture | `security.yml`, negative test |
+| The gate refuses insecure workloads | 29 violations found in `controls/kubernetes/bad/` | `security.yml`, workload policy gate |
+| A real API server refuses a privileged pod | admission rejects it with `violates PodSecurity` | `security.yml`, workload policy gate |
+| The rendered manifests are gated, not only the committed ones | the policy runs after real identifiers are substituted | `app-deploy.yml` |
+| No rule is decorative | 77 of 81 rules proven to fire; 4 exempt, each named with a reason | `security.yml`, rule coverage |
+| No credential reaches the repository | full-history secret scan | `security.yml`, secret scan |
+| Somebody else's scanner agrees | Trivy over `controls/`, advisory | `security.yml`, third-party scan |
 
-`pipeline-iam` is never part of a teardown: the state bucket, its CMK and the
-deploy role survive, because the next deployment needs them.
+The `security gate` job requires every one of those to have passed, so none can
+be skipped by renaming a file. No job in that workflow authenticates to AWS at
+all: `terraform plan` renders the graph with mock credentials and the policy
+engine reads that graph as a file, so the whole gate chain runs on untrusted
+input with nothing to steal.
+
+The coverage gate is the one worth explaining. A rule that has never rejected
+anything has not been tested, and a Rego rule that inspects the wrong path
+passes silently forever. The coverage step walks every `deny` in the policy
+directory and fails the build unless that rule's message appears in the output
+of a negative fixture.
+
+Four rules are exempt and the exemption is itself checked — if one ever does
+fire, the build fails as stale. Each is the "present but misconfigured" half of
+a pair whose other half is "absent entirely": a plan cannot simultaneously have
+no flow log and have one with the wrong traffic type. They are covered by
+inspection of their twin.
 
 ## 6. Assumptions
 
@@ -398,10 +360,6 @@ Stated because they bound what the implementation can claim.
 - **All sample data is synthetic.** The corpus, the employee identifiers, the
   contact details and the revenue figures are invented. The account IDs and OIDC
   issuers in committed examples are placeholders and refer to nothing.
-- **The reviewer has an AWS account with Bedrock enabled.** Without one, the
-  [offline](#3-offline-validation) and
-  [local cluster](#4-local-cluster-validation) validation still run in
-  full; [the live path](#5-from-zero-to-a-live-answer) does not.
 - **Cost is accepted at roughly $17/day**, about two thirds of it OpenSearch
   Serverless, which has no idle tier.
 
@@ -465,20 +423,9 @@ Stated because they bound what the implementation can claim.
   `confirm=destroy` on teardown.
 - **There is no automated test suite for the application code.** The mediation
   service is validated by running it, not by unit tests.
-
-### What the local cluster cannot prove
-
-A kind cluster on a laptop is not EKS. These controls are implemented in
-Terraform and reviewed as code, but nothing local executes them:
-
-- **IRSA federating with STS.** The projected token and the audience are real in
-  the manifests; the exchange for AWS credentials needs a real OIDC provider.
-- **EKS access entries.** `authentication_mode = "API"` removes the aws-auth
-  ConfigMap path. kind has no equivalent.
-- **CMK envelope encryption of etcd.** `encryption_config` over `secrets` is a
-  managed control plane feature.
-- **Control plane audit logs reaching CloudWatch.** The log types are enabled in
-  Terraform; the delivery is AWS-side.
+- **Trivy findings are advisory.** SARIF upload needs GitHub Advanced Security,
+  which a private repository on a free plan does not have, so the scan reports
+  to the job log and does not block.
 
 Said plainly because a reviewer will ask, and the honest answer is shorter than
 the evasive one.
@@ -486,11 +433,10 @@ the evasive one.
 ## 8. When it breaks
 
 The runbook's [troubleshooting table](docs/RUNBOOK.md#6-troubleshooting) covers
-the offline-plan credential
-traps, `for_each` over unknown values, the coverage gate refusing a new rule,
-the OIDC subject mismatch, held state locks, and the podman `krunkit` PATH trap.
-`CLAUDE.md` carries the longer findings, each one written down the first time it
-cost an hour.
+the OIDC subject mismatch, held state locks, `for_each` over values unknown at
+plan time, the coverage gate refusing a new rule, and the jump host failures
+that look like slowness rather than denial. `CLAUDE.md` carries the longer
+findings, each one written down the first time it cost an hour.
 
 ## Note
 

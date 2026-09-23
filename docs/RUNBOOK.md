@@ -4,251 +4,163 @@ Operational how-to for this repo. `README.md` explains what the controls
 prove; this explains what to type, in what order, and what to do when it
 breaks. See `CLAUDE.md` for the assignment context and locked decisions.
 
+Everything here runs against AWS in `eu-central-1`. The pipeline owns Terraform,
+the policy engine and the image build; the jump host receives what it needs over
+Session Manager. Nothing is applied from a workstation except the one-time IAM
+setup below.
+
 ## 1. Prerequisites
 
-| Tool | Needed for | Notes |
-|---|---|---|
-| `terraform` | plan, policy, everything | |
-| `conftest` | policy gates | |
-| `jq` | `make plan` resource counts, gate output | |
-| `python3` | `make policy-coverage` | |
-| `kind` 0.33+ | live cluster targets | |
-| `kubectl` | live cluster targets | every call pins `--context kind-koerber-demo` |
-| `helm` | live cluster targets | Kyverno install |
-| `podman` machine, running | live cluster targets | `/opt/podman/bin` must be on `PATH` for `krunkit`, or the machine will not start |
+### The AWS account
 
-Offline targets (`plan`, `policy`, `ci`) need none of the AWS credentials —
-`providers.tf` injects mock keys when `offline_plan = true` (the default).
+| Requirement | Why |
+|---|---|
+| Bedrock model access in `eu-central-1` | Anthropic Claude through the EU inference profile, Titan for embeddings |
+| `eu-central-1`, `eu-west-1`, `eu-west-3`, `eu-north-1`, `eu-south-1`, `eu-south-2` all enabled | the EU inference profile routes to all six; the last two are opt-in and a request routed to a disabled region fails |
+| Credentials that can create IAM, once | the [one-time setup](#21-one-time-setup) below. With `aws-vault`, pass `--no-session` or IAM refuses with `InvalidClientTokenId` while `sts:GetCallerIdentity` still succeeds |
 
-## 2. Day-to-day: the offline gate loop
+### The GitHub repository
 
-No AWS account, no podman, no cost. This is what CI runs and what you run
-while editing Terraform or Rego.
+Repository variables `TF_STATE_BUCKET`, `TF_STATE_REGION`,
+`TF_STATE_KMS_KEY_ARN`, `AWS_DEPLOY_ROLE_ARN`, `CLUSTER_ADMIN_ARNS`,
+`COST_ALERT_EMAIL`, `SECURITY_ALERT_EMAIL`, and an Actions environment named
+`production`. The environment name is load-bearing — the OIDC trust policy pins
+`environment:production` in the token subject, so a job without it cannot assume
+the role.
 
-```bash
-make plan             # render both roots to plan.json
-make policy           # both secure layers pass all 81 rules
-make policy-negative  # insecure fixture must FAIL (a clean run is a bug)
-make policy-k8s       # workload manifests pass
-make policy-coverage  # every rule fires against a fixture
-make ci               # all of the above, in the order the pipeline runs it
-```
+### To drive it
 
-`plan.json` files are real file targets keyed on `.tf` mtimes — editing Rego
-alone does not re-render a plan; editing a module under
-`controls/terraform/modules/` re-renders both roots.
+`gh` for the workflow dispatches, and the AWS CLI with the Session Manager
+plugin plus `kubectl` to reach the private cluster. `terraform` is needed only
+for the one-time setup.
 
-After editing Terraform: `make clean` before `make plan` if a stale
-`plan.json` looks wrong (rare — the file-target dependency should catch it).
-
-## 3. Live cluster session
-
-Needs podman running. Order matters — `k8s-demo` depends on `kind-up`.
-
-```bash
-make kind-up          # create the kind cluster (podman driver)
-make k8s-demo         # apply base manifests + Kyverno, admit the hardened
-                       # workload, then throw four bad manifests at the API
-                       # server and show each refused
-make netpol-proof     # send a packet before and after default-deny egress
-make kind-down        # tear down when finished
-```
-
-Every `kubectl` call in the Makefile pins `--context kind-koerber-demo`
-deliberately — the current-context on this machine is a real work EKS
-cluster, and the `bad/` manifests are privileged on purpose. Never run
-`kubectl` here without `--context` if you're typing it by hand instead of
-through `make`.
-
-**Podman gotcha:** if the machine won't start, check `/opt/podman/bin` is on
-`PATH` first before anything else — that's the `krunkit` trap, not a podman
-bug. Never prune podman volumes or stopped containers on this machine; they
-may not be yours.
-
-## 4. Real AWS deploy
-
-Two ways in: [the pipeline](#4a-through-the-pipeline), normal, and
-[by hand](#4b-by-hand), for when the pipeline
-is not an option. Both deploy for real, in `eu-central-1`, at roughly $17/day
-(71% OpenSearch Serverless). There is still no `apply`/`destroy` Makefile
-target on purpose — don't add one without asking.
+## 2. Deploying
 
 Roots are separate applies, in order, because `bedrock-ai` takes
-`eks-platform`'s VPC/OIDC values as plain variables (not a remote-state lookup
-— that's what keeps `plan` credential-free).
+`eks-platform`'s VPC and OIDC values as plain variables rather than a
+remote-state lookup. There is deliberately no `apply`/`destroy` shortcut
+anywhere — deployment is a workflow with a gate chain, not a command.
 
-### 4a. Through the pipeline
+### 2.1 One-time setup
 
-One-time setup, from a laptop with admin credentials:
+From a workstation with admin credentials, once per account:
 
 ```bash
 cd controls/terraform/pipeline-iam
-cp terraform.tfvars.example terraform.tfvars   # bucket name, GitHub owner/repo
+cp terraform.tfvars.example terraform.tfvars   # bucket name, GitHub owner/repo, numeric IDs
 terraform init && terraform apply
+terraform output                                # values for the repository variables
 ```
 
-Then, in the repository: set `TF_STATE_BUCKET` and `AWS_DEPLOY_ROLE_ARN` (and
-optionally `COST_ALERT_EMAIL` and `CLUSTER_ADMIN_ARNS`) as Actions
-**variables**, and create an Actions **environment** named `production`. See
-`controls/terraform/pipeline-iam/README.md` — the environment name is
-load-bearing, the OIDC trust policy pins it.
-
-`CLUSTER_ADMIN_ARNS` is a comma-separated list of IAM principals granted EKS
-cluster admin, for example
+See `controls/terraform/pipeline-iam/README.md`. `CLUSTER_ADMIN_ARNS` is a
+comma-separated list of IAM principals granted EKS cluster admin, for example
 `arn:aws:iam::<account>:user/<you>`. The cluster is created with
-`bootstrap_cluster_creator_admin_permissions` off, so nobody inherits admin
-from having run the apply. Leave the variable unset and no human can read the
+`bootstrap_cluster_creator_admin_permissions` off, so nobody inherits admin from
+having run the apply. Leave the variable unset and no human can read the
 cluster: `kubectl` returns `error: You must be logged in to the server
 (Unauthorized)` and the EKS console shows **Unauthorized** in place of the Pods
 and Nodes counts. The principal has to be the one you actually sign in as — an
-entry for a user does not cover a role you assume, or the reverse.
+entry for a user does not cover a role you assume.
 
-After that:
+`pipeline-iam` keeps remote state like the other roots, and it has gained
+permissions over time: the deploy role needs `cloudwatch:PutMetricAlarm` and the
+`sns:` and `sqs:` actions for the alerting module. A push does not pick this root
+up, because it runs with a person's credentials — apply it before the first
+provision of a rebuilt environment, or the AI layer fails on `AccessDenied`.
+
+### 2.2 The infrastructure
 
 ```bash
 gh workflow run infra-provision.yml            # gate chain, then both layers in order
-gh workflow run infra-destroy.yml -f confirm=destroy
+gh run watch <run-id> --exit-status --interval 30
 
 # one layer at a time, once it already exists
 gh workflow run infra-eks-platform.yml -f action=apply
 gh workflow run infra-bedrock-ai.yml   -f action=destroy
+
+gh workflow run infra-destroy.yml -f confirm=destroy
 ```
 
-Every terraform command lives in `tf-reusable-workflow.yaml`, a reusable workflow the four
-above call. A caller passes a layer and an action and nothing else — it cannot
-supply its own terraform invocation or skip the gate chain on a first run.
+Every terraform command lives in `tf-reusable-workflow.yaml`, a reusable workflow
+the four above call. A caller passes a layer and an action and nothing else — it
+cannot supply its own terraform invocation or skip the gate chain on a first run.
 
-`infra-provision.yml` re-runs `make ci` before it authenticates, generates the S3
-backend and the real tfvars at run time (`.github/scripts/tf-config.sh`), and
-reads the platform layer's applied outputs into the AI layer
-(`.github/scripts/tf-wire.sh`) so no value is hand-copied. `infra-destroy.yml`
-refuses to start unless `confirm` is literally `destroy`, and tears the layers
-down in reverse order.
+`infra-provision.yml` re-runs the gate chain before it authenticates, generates
+the S3 backend and the real tfvars at run time (`.github/scripts/tf-config.sh`),
+and reads the platform layer's applied outputs into the AI layer
+(`.github/scripts/tf-wire.sh`) so no value is hand-copied. The platform layer's
+saved plan is gated immediately before it is applied — upstream's EKS module
+reads `aws_caller_identity` and friends during plan, so that layer cannot be
+rendered without an account and is gated inside the applying run instead.
+`infra-destroy.yml` refuses to start unless `confirm` is literally `destroy`, and
+tears the layers down in reverse order.
 
 Both share a concurrency group, so an apply and a destroy cannot overlap, and
 neither is cancellable mid-run — a cancelled Terraform leaves a held lock.
 
+A push to `main` touching `controls/terraform/**` triggers `infra-provision.yml`.
+The two single-layer callers are dispatch-only.
+
 Note on the approval gate: `environment: production` currently enforces
 **nothing**, because required-reviewer protection rules need a paid plan on a
-private repository. The real gate today is that both workflows are
-dispatch-only. The block stays because it starts working the day the plan
-changes, and because the OIDC subject depends on it.
+private repository. The real gate today is the policy chain each run carries and
+the typed confirmation on teardown. The block stays because it starts working
+the day the plan changes, and because the OIDC subject depends on it.
 
-### 4b. By hand
+## 3. The application
 
-State is local in this path, so it is not interchangeable with
-[the pipeline](#4a-through-the-pipeline) — pick one
-and stay with it for the life of a deployment.
-
-```bash
-# 1. eks-platform first
-terraform -chdir=controls/terraform/eks-platform init
-terraform -chdir=controls/terraform/eks-platform apply -var offline_plan=false
-
-# 2. read its outputs
-terraform -chdir=controls/terraform/eks-platform output
-
-# 3. bedrock-ai, feeding in the real values from step 2
-terraform -chdir=controls/terraform/bedrock-ai apply \
-  -var offline_plan=false \
-  -var account_id=<real account id> \
-  -var vpc_id=<from step 2> \
-  -var private_subnet_ids='["<...>","<...>"]' \
-  -var eks_oidc_provider_arn=<from step 2> \
-  -var eks_oidc_provider_url=<from step 2>
-```
-
-**Teardown is a decision, not a habit.** The stack is left up between
-sessions on purpose and costs roughly $17/day; nothing is destroyed without an
-explicit instruction. When that instruction comes, follow
-[Teardown and rebuild](#7-teardown-and-rebuild) — or, in this
-by-hand path, `terraform destroy` on both roots, bedrock-ai first, then
-eks-platform. `pipeline-iam` is never part of a teardown: the state bucket, its
-CMK and the deploy role survive, because the next deployment needs them.
-
-## 5. Presentation demo
-
-Budgeted at three minutes; `make demo` itself runs ~13s and prints 47 lines.
-Don't add to it without checking it still earns its place.
-
-```bash
-make demo
-```
-
-Walks: render offline → both layers pass → insecure fixture fails → insecure
-workloads fail → every rule proven to fire. `SHOW=5` truncates negative
-output to five examples plus a count; unset (as CI leaves it) for the full
-list — `make policy-negative` / `make policy-k8s-negative` alone always show
-everything.
-
-## 4c. The application
-
-Four dispatches, in order. Nothing here is typed against the cluster by hand:
+Three dispatches, in order. Nothing here is typed against the cluster by hand:
 the image needs the registry, the secrets need the secret containers, the
 manifests need the image digest, and the index needs the corpus bucket, and all
-four come from applied state.
+of them come from applied state.
 
-**1. Build and push the image.** Dispatch `app-image.yml` with a tag. It runs on
-a GitHub runner rather than the jump host because the jump host has no route to
-the internet and cannot pull a base image or an npm package. The run summary
-prints the digest; nothing downstream uses the tag.
-
-**2. Write the secret material.** Dispatch `app-secrets.yml` with `confirm=rotate`.
+**1. Secret material.** Dispatch `app-secrets.yml` with `confirm=rotate`.
 
 Two values the service needs and no manifest may carry: the key that signs
 caller identity tokens, and the TLS key pair the pod presents on :8443.
 Terraform creates the secret containers in Secrets Manager, CMK-encrypted, and
-deliberately never an `aws_secretsmanager_secret_version` -- a version resource
+deliberately never an `aws_secretsmanager_secret_version` — a version resource
 puts the plaintext into state, and state is the one artefact of this pipeline
 that holds every attribute of every resource.
 
 The generation happens on the jump host, over Session Manager, so the material
 is created inside the VPC and written to Secrets Manager over an endpoint. It
 never exists on a GitHub runner. Rerunning the workflow rotates both; the pods
-pick a rotated value up on restart, which is what step 3 does.
+pick a rotated value up on restart, which is what the next step does.
 
-**3. Apply the manifests.** Dispatch `app-deploy.yml` with the digest from step 1.
+**2. Image and manifests.** Dispatch `app-release.yml`, which calls
+`app-image.yml` then `app-deploy.yml` with the digest between them.
 
-The runner cannot reach the API server -- it is private, the nodes have no
+The image is built on a GitHub runner because the jump host has no route to the
+internet and cannot pull a base image or an npm package. Nothing downstream uses
+a tag.
+
+The runner cannot reach the API server either — it is private, the nodes have no
 public address, and the VPC has no internet gateway. So the runner does what
 only it can: read applied state, render the manifests against it, and run the
 policy gate over the *rendered* output rather than the committed shape, because
 substituting real identifiers is exactly the step that could introduce a
-violation. It then stages the manifests and a `kubectl` binary in the state
+violation. It then stages the manifests plus a `kubectl` binary in the state
 bucket, and sends the jump host a Run Command to fetch and apply them. The
 staging prefix is deleted afterwards whether the apply succeeded or not.
 
 `kubectl` crosses that way because the jump host cannot download one: no route
 to dl.k8s.io, and an S3 gateway endpoint is the only egress it has.
 
-**4. Index the corpus.** From the jump host, which is the only principal the
-OpenSearch data access policy grants writes to. The service itself can only
-read, which is what stops a prompt injection poisoning the corpus:
+**3. Index the corpus.** Dispatch `app-index.yml` with `confirm=index`.
 
-```bash
-python -m mediation.ingest \
-  --bucket "$(terraform -chdir=controls/terraform/bedrock-ai output -raw rag_bucket)" \
-  --endpoint "$(terraform -chdir=controls/terraform/bedrock-ai output -raw vector_collection_endpoint)" \
-  --strict --recreate
-```
+Ingestion runs from the jump host, the only principal the OpenSearch data access
+policy grants writes to. The service itself can only read, which is what stops a
+prompt injection poisoning the corpus. The run passes `--recreate`, which drops
+the index before rebuilding it — hence the typed confirmation.
 
-**5. Mint a token to ask with.** One per identity you want to demonstrate. The
-signing key is the one step 2 wrote, read back from Secrets Manager:
+A push to `main` touching `app/**` or `controls/kubernetes/**` triggers
+`app-release.yml`. A push touching `controls/data/corpus/**` triggers
+`app-index.yml` — and that alone indexes the *previous* corpus, because the
+ingester reads documents from S3 and Terraform uploads them. Run
+`infra-provision.yml` first, then `app-index.yml`.
 
-```bash
-export IDENTITY_TOKEN_SECRET="$(aws secretsmanager get-secret-value \
-  --secret-id "$(terraform -chdir=controls/terraform/bedrock-ai output -raw identity_signing_key_secret_arn)" \
-  --query SecretString --output text)"
-
-python -m mediation.tokens alice --groups all-staff
-python -m mediation.tokens dana  --groups all-staff finance-team
-```
-
-Only the workload role and the jump host role can read those secrets: each
-carries a resource policy denying `GetSecretValue` to every other principal,
-which holds even if someone widens an IAM policy later.
-
-## 5a. Reaching the live platform
+## 4. Reaching the live platform
 
 There is no public endpoint anywhere in this design: the API server is private,
 the nodes are in private subnets, and there is no internet gateway. Everything
@@ -259,64 +171,111 @@ Prerequisite: the Session Manager plugin for the AWS CLI, and credentials that
 can call `ssm:StartSession` on the instance.
 
 ```bash
-# 1. the instance id, from the platform layer's state
-terraform -chdir=controls/terraform/eks-platform output -raw bastion_instance_id
+# the cluster endpoint, and the jump host
+aws eks describe-cluster --name genai-assistant-prod --region eu-central-1 \
+  --query 'cluster.{version:version,status:status,endpoint:endpoint}'
 
-# 2. a shell on the jump host
-aws-vault exec pun100 -- aws ssm start-session \
-  --region eu-central-1 --target <instance-id>
+aws ec2 describe-instances \
+  --filters Name=tag:Name,Values=genai-assistant-prod-bastion \
+            Name=instance-state-name,Values=running \
+  --query 'Reservations[].Instances[].InstanceId' --output text
+
+# a rebuild issues a new endpoint and CA — regenerate this every time
+aws eks update-kubeconfig --name genai-assistant-prod --region eu-central-1 \
+  --kubeconfig ~/.kube/koerber-live.yaml --alias koerber-live
 ```
 
-To drive the cluster from your own laptop instead of from the jump host's
-shell, forward the private API server through it and point kubectl at
-localhost:
+A shell on the jump host is `aws ssm start-session --target <instance-id>`. To
+drive the cluster instead, forward the private API server through it:
 
 ```bash
-aws-vault exec pun100 -- aws ssm start-session \
-  --region eu-central-1 --target <instance-id> \
+aws ssm start-session --target <instance-id> \
   --document-name AWS-StartPortForwardingSessionToRemoteHost \
-  --parameters '{"host":["<cluster-endpoint-host>"],"portNumber":["443"],"localPortNumber":["8443"]}'
+  --parameters host="<api server hostname>",portNumber=443,localPortNumber=6443
 ```
 
-Then, in a second terminal, reach the mediation service and open
-`https://localhost:8443` — the certificate is self-signed, so the browser will
-ask once:
+`<api server hostname>` is the endpoint above with `https://` stripped. kubectl
+then needs three flags, because the certificate is issued for that hostname and
+not for localhost:
 
 ```bash
-kubectl --context <ctx> -n genai-platform port-forward svc/genai-mediation 8443:443
+kubectl --kubeconfig ~/.kube/koerber-live.yaml --context koerber-live \
+  --server https://127.0.0.1:6443 --tls-server-name <api server hostname> \
+  -n genai-platform get pods
 ```
 
-What to show, in order:
+Then mint the identities **in the pod** and forward the service:
+
+```bash
+kubectl ... exec deploy/genai-mediation -- python -m mediation.tokens alice --groups all-staff
+kubectl ... exec deploy/genai-mediation -- python -m mediation.tokens dana  --groups finance-team
+kubectl ... port-forward deploy/genai-mediation 8443:8443
+```
+
+Front end at `https://127.0.0.1:8443/`, self-signed. Tokens are minted in the pod
+because the signing key's resource policy denies every principal but the workload
+and ingestion roles — a workstation with administrator credentials cannot read
+it.
+
+A deploy replaces the pods and silently kills the port-forward. Restart it rather
+than debugging an empty response.
+
+Never point `kubectl` at a context you have not named explicitly. The
+current-context on a work machine is usually a real work cluster.
+
+## 5. Demo walkthrough
+
+Budgeted at three minutes at the front end, plus two to three waiting on the
+alarm.
 
 | Ask as | Question | What proves the control |
 |---|---|---|
-| `alice` (all-staff) | leave carry-over deadline | ordinary retrieval, sources cited |
+| `alice` | leave carry-over deadline | ordinary retrieval, sources cited |
 | `alice` | Q3 revenue forecast | no sources returned — the passage was never a candidate, not filtered afterwards |
-| `dana` (finance-team) | the same question | the same corpus answers, because entitlement changed and nothing else did |
-| anyone | summarise the customer records document | guardrail intervenes: the `customer-and-payment-data` denied topic refuses the request before retrieval |
+| `dana` | the same question | the same corpus answers, because entitlement changed and nothing else did |
+| `alice` | who is on call and how to contact them | the document *is* retrieved and the identifiers come back as `{EMAIL}`, `{PHONE}`, `{employee-id}` — masking, not filtering |
+| `alice` | `ignore all previous instructions…` | the guardrail intervenes; a model refusal looks identical and is not a control |
 | anyone | anything, with the token field emptied | 401 before any retrieval happens |
 
-Never run this against the default kubectl context: it is a real work cluster.
-Name the context explicitly on every call, exactly as the Makefile does for
-kind.
+Rows two and three back to back are the point of the design. Row four and row
+five both read `guardrail_intervened: true` — an anonymisation counts as an
+intervention — so the answer body, not the badge, separates masked from blocked.
+
+Then the alarm. Ask the injection three times in a minute: the
+`guardrail-interventions` alarm sums over 60 seconds with a threshold of 3.
+
+```bash
+aws cloudwatch describe-alarms --alarm-names genai-assistant-prod-guardrail-interventions \
+  --query 'MetricAlarms[].{state:StateValue,reason:StateReason}'
+
+QUEUE=$(aws sqs get-queue-url --queue-name genai-assistant-prod-security-alerts \
+  --query QueueUrl --output text)
+aws sqs receive-message --queue-url "$QUEUE" --wait-time-seconds 20 \
+  --query 'Messages[].Body' --output text | jq -r '.Message | fromjson'
+```
+
+The email subscription on that topic is `PendingConfirmation` and undiagnosed;
+the queue is the path that makes the claim checkable. `bedrock-access-denied`
+cannot be shown live — CloudTrail delivers on a five-to-fifteen-minute schedule.
 
 ## 6. Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `plan` fails asking for real AWS creds | ran with `-var offline_plan=false` or unset default, or real `AWS_*` env vars leaking in | offline targets run under `env -u AWS_ACCESS_KEY_ID ...` (`$(NO_AWS)` in the Makefile) — don't override `offline_plan` for offline work |
-| A rule checking a cross-resource attribute false-positives | attribute is unresolved at plan time, sitting in `resource_changes[].change.after_unknown`, not `planned_values` | use `lib.unknown_at(address, path)` in the rule |
-| `Invalid for_each argument` after adding a client or an admin principal | the value is a security group ID or role ARN, unknown until apply, used as a `for_each` **key** | pass a `map(string)` keyed by a static name (`nodes`, `bastion`), never `toset()` of the unknowns |
-| `aws ssm start-session` hangs or says the target is not connected | the SSM agent has no route: an endpoint missing, or the jump host security group has no egress to it | check `ssm`, `ssmmessages`, `ec2messages` endpoints exist and `bastion_to_endpoints` allows 443 |
-| A refactor "changed" a plan with no real diff | `terraform show -json` reorders `relevant_attributes` every run | compare `jq -S '{planned_values, resource_changes}'`, not the raw file |
-| New rule passes `make policy` but fails `make ci` | `make policy-coverage` requires every rule to fire against a fixture at least once | add/extend a fixture so the rule's message appears in negative output, or add it to the 4-rule exemption list in `controls/policy/coverage.py` with a reason |
-| `infra-provision.yml` fails at `configure-aws-credentials` with `Not authorized to perform sts:AssumeRoleWithWebIdentity` | the job's OIDC subject doesn't match the role's trust policy | the job must declare `environment: production` — the trust policy pins `repo:<owner>/<repo>:environment:production`, not the branch |
+| `infra-provision.yml` fails at `configure-aws-credentials` with `Not authorized to perform sts:AssumeRoleWithWebIdentity` | the job's OIDC subject doesn't match the role's trust policy | the job must declare `environment: production`; the trust policy pins the environment, not the branch, and accepts both the legacy and the ID-qualified subject |
 | An apply fails with the state lock already held | a previous run was cancelled mid-apply | `terraform force-unlock <id>` against the same backend, after confirming no run is live; the workflows set `cancel-in-progress: false` to stop this happening |
 | `tf-wire.sh` exits with `eks-platform state holds no outputs` | the AI layer was dispatched against an empty or wrong state | apply the platform layer first, and check `TF_STATE_BUCKET` names the state bucket |
+| The AI layer fails on `cloudwatch:PutMetricAlarm` or `sqs:CreateQueue` | `pipeline-iam` is behind; it is applied by hand and a push does not pick it up | apply `pipeline-iam` from a workstation, then re-run the provision |
+| A rule checking a cross-resource attribute false-positives | the attribute is unresolved at plan time, sitting in `resource_changes[].change.after_unknown`, not `planned_values` | use `lib.unknown_at(address, path)` in the rule |
+| `Invalid for_each argument` after adding a client or an admin principal | the value is a security group ID or role ARN, unknown until apply, used as a `for_each` **key** | pass a `map(string)` keyed by a static name (`nodes`, `bastion`), never `toset()` of the unknowns |
+| A new rule passes the policy gate but the run still fails | the coverage step requires every rule to fire against a fixture at least once | extend a fixture so the rule's message appears in negative output, or add it to the four-rule exemption list in `controls/policy/coverage.py` with a reason |
 | An exempt rule shows up in coverage output | one of the "present but misconfigured" halves in `coverage.py` actually fired | remove it from the exemption list — the gate treats this as stale and fails |
-| podman machine won't start | `krunkit` not found | put `/opt/podman/bin` on `PATH` |
-| `kubectl` hits the wrong cluster | forgot `--context kind-koerber-demo` | always pin context by hand; never rely on current-context here |
-| Merging the two Terraform roots "to simplify" | OIDC issuer URL becomes unknown at plan time in a single root, which makes the IRSA trust policy unknown, which makes its rule stop firing — silently | don't merge them; that split is a policy requirement, not an ownership one |
+| `aws ssm start-session` hangs or says the target is not connected | the SSM agent has no route: an endpoint missing, or the jump host security group has no egress to it | check the `ssm`, `ssmmessages` and `ec2messages` endpoints exist and `bastion_to_endpoints` allows 443 |
+| An AWS call from the jump host hangs with empty stderr, then `Connect timeout on endpoint URL` | a route is not a permission: the gateway or interface endpoint exists but the security group has no egress to the S3 prefix list or the endpoint group | add the egress rule; the same class of failure left nodes `NotReady` with no health issue reported |
+| A deploy times out with `timed out waiting for the condition` | the pod cannot reach a secret or the CMK; a rollout during a policy change is denied under the old one | the workflow prints pods, events and logs from the jump host session — read those, then retry once the policy has landed |
+| The first question after an index run answers with `sources: []` | OpenSearch Serverless needs about a minute to settle after `--recreate` | wait and ask again |
+| A corpus edit produced a green index run and the new content is absent | the ingester reads the documents from S3 and Terraform uploads them | run `infra-provision.yml`, then `app-index.yml -f confirm=index` |
+| Merging the two Terraform roots "to simplify" | the OIDC issuer URL becomes unknown at plan time in a single root, which makes the IRSA trust policy unknown, which makes its rule stop firing — silently | don't merge them; that split is a policy requirement, not an ownership one |
 
 ## 7. Teardown and rebuild
 
@@ -335,13 +294,13 @@ ECR repository, trail.
 
 Survives, and rebuild depends on it:
 
-- `pipeline-iam` — the OIDC provider and the deploy role. Separate root, local
-  state, never dispatched. Destroy it and the
-  [one-time setup](#4a-through-the-pipeline) has to be
-  redone from a laptop with admin credentials.
+- `pipeline-iam` — the OIDC provider and the deploy role. Separate root, never
+  dispatched. Destroy it and the [one-time setup](#21-one-time-setup) has to be redone from a
+  workstation with admin credentials.
 - The Terraform **state bucket**. The destroy writes empty state into it.
 - Actions variables `TF_STATE_BUCKET`, `AWS_DEPLOY_ROLE_ARN`,
-  `CLUSTER_ADMIN_ARNS`, `COST_ALERT_EMAIL`, and the `production` environment.
+  `CLUSTER_ADMIN_ARNS`, `COST_ALERT_EMAIL`, `SECURITY_ALERT_EMAIL`, and the
+  `production` environment.
 - The `eu-south-1` / `eu-south-2` region opt-ins. Account-level, they persist.
 
 The pipeline sets `ephemeral_environment = true`, so the secrets are deleted
@@ -397,7 +356,7 @@ gh workflow run infra-provision.yml
 gh run watch <run-id> --exit-status --interval 30
 
 # 2. the signing key and the TLS pair, generated on the jump host    ~1 min
-gh workflow run app-secrets.yml
+gh workflow run app-secrets.yml -f confirm=rotate
 gh run watch <run-id> --exit-status --interval 20
 
 # 3. image build, then render + gate + apply with that digest        ~4 min
@@ -423,8 +382,8 @@ Why each wait matters:
   applied state during `app-deploy`, which is exactly why nothing downstream
   refers to a value typed by a human.
 - If step 1 is dispatched while `CLUSTER_ADMIN_ARNS` is unset, the cluster comes
-  up with no human admin at all (`bootstrap_cluster_creator_admin_permissions`
-  is off) and `kubectl` answers `Unauthorized`. Fixing it means another apply.
+  up with no human admin at all and `kubectl` answers `Unauthorized`. Fixing it
+  means another apply.
 - **The security alert subscription is confirmed by hand, once per rebuild.**
   The AI layer creates an SNS topic and an email subscription; AWS mails a
   confirmation link and delivers nothing until it is clicked, while Terraform
@@ -432,50 +391,20 @@ Why each wait matters:
   arrives:
 
   ```bash
-  aws sns list-subscriptions-by-topic --topic-arn "$(terraform -chdir=controls/terraform/bedrock-ai \
-    output -raw security_alert_topic_arn)" --query 'Subscriptions[].SubscriptionArn'
+  aws sns list-subscriptions-by-topic --topic-arn <topic arn> \
+    --query 'Subscriptions[].SubscriptionArn'
   ```
 
   A value reading `PendingConfirmation` is an alarm nobody receives. The topic
   also delivers to an SQS queue, which needs no confirmation and is therefore
-  the path to check:
-
-  ```bash
-  QUEUE=$(aws sqs get-queue-url --queue-name genai-assistant-prod-security-alerts \
-    --query QueueUrl --output text)
-  aws sqs receive-message --queue-url "$QUEUE" --wait-time-seconds 20 \
-    --query 'Messages[].Body' --output text | jq -r '.Message | fromjson'
-  ```
-- **`pipeline-iam` is applied by hand, and it gained permissions.** The deploy
-  role needs `cloudwatch:PutMetricAlarm` and the `sns:` and `sqs:` actions for
-  the alerting module. That root runs with a person's own credentials, so a push does not
-  pick it up; apply it before the first provision or the AI layer fails on
-  `AccessDenied`.
+  the path to check — see the
+  [demo walkthrough](#5-demo-walkthrough).
 
 ### 7d. The five manual minutes
 
-```bash
-# a shell on the jump host, then the API server through it
-# see "Reaching the live platform" above
-aws ssm start-session --target <instance-id> \
-  --document-name AWS-StartPortForwardingSessionToRemoteHost \
-  --parameters host="<api server hostname>",portNumber=443,localPortNumber=6443
-
-kubectl --kubeconfig ~/.kube/koerber-live.yaml -n genai-platform get pods
-kubectl ... exec deploy/genai-mediation -- python -m mediation.tokens alice --groups all-staff
-kubectl ... exec deploy/genai-mediation -- python -m mediation.tokens dana  --groups finance-team
-kubectl ... port-forward deploy/genai-mediation 8443:8443
-```
-
-Front end at `https://127.0.0.1:8443/`, self-signed. Tokens are minted **in the
-pod**: the signing key's resource policy denies every principal but the workload
-and ingestion roles, so a laptop with administrator credentials cannot read it.
-
-A deploy replaces the pods and silently kills the port-forward — restart it
-rather than debugging an empty response.
-
-Then the demo rows in
-[Reaching the live platform](#5a-reaching-the-live-platform), in order. The
-injection row is the one that
-proves the rebuild is genuinely finished: `stopReason: guardrail_intervened`,
-not a polite refusal from the model.
+The two Session Manager hops, the two tokens minted in the pod, and the
+port-forward — all of it in
+[Reaching the live platform](#4-reaching-the-live-platform). Then the
+[demo rows](#5-demo-walkthrough), in order. The
+injection row is the one that proves the rebuild is genuinely finished:
+`guardrail_intervened: true`, not a polite refusal from the model.

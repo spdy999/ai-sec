@@ -1,14 +1,14 @@
 ---
 name: demo
-description: Run the presentation walkthrough of this platform — the offline gate chain, the live front end, and a security alarm firing end to end. Use after an infra rebuild, or when the user says demo, walkthrough, dry run, or asks to show what is deployed.
+description: Run the presentation walkthrough of this platform — the pipeline gate chain, the live front end, and a security alarm firing end to end. Use after an infra rebuild, or when the user says demo, walkthrough, dry run, or asks to show what is deployed.
 ---
 
 The full story in one run: **the gates refuse bad config**, then **the live
 service answers differently for two identities and blocks an injection**, then
 **a detection notices and delivers a message**.
 
-Read the runbook's [Presentation demo](../../../docs/RUNBOOK.md#5-presentation-demo)
-and [The five manual minutes](../../../docs/RUNBOOK.md#7d-the-five-manual-minutes)
+Read the runbook's [Demo walkthrough](../../../docs/RUNBOOK.md#5-demo-walkthrough)
+and [Reaching the live platform](../../../docs/RUNBOOK.md#4-reaching-the-live-platform)
 for the underlying mechanics. This skill is
 the sequence, the preflight that stops it wasting a rehearsal, and the cleanup.
 
@@ -64,14 +64,22 @@ If anything is missing, stop and name the rebuild step that fixes it —
 
 ## Step 1 — The gates
 
+The gate chain runs in the pipeline, not on a workstation. Show the run, not a
+local command:
+
 ```bash
-make demo
+gh run list --workflow=security.yml --limit 3
+gh run view <run-id>
 ```
 
-About 13 seconds, 47 lines: the rules pass the two secure layers, then refuse
-the insecure fixture, then the verdict. This is the only part that needs no
-account, and it is the beginning of the story — controls that reject bad input
-rather than accept good input.
+Five jobs: the infrastructure policy gate (81 rules pass, then the insecure
+fixture must fail, then every rule proven to fire), the workload policy gate
+(manifests pass, the bad ones fail, and a real API server refuses a privileged
+pod), the secret scan, the third-party scan, and the `security gate` job that
+requires the rest. None of them authenticates to AWS.
+
+The point to make out loud: every gate is proven by what it **refuses**. A clean
+run of the negative test is itself a build failure.
 
 ## Step 2 — The front end
 
