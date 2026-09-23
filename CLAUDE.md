@@ -712,6 +712,34 @@ The demo sequence is three injections, `describe-alarms` going ALARM, then
 `receive-message` off the queue — under three minutes, allowing for the metric
 filter's own delay.
 
+**The alarm cannot attribute a burst to one caller, and CloudWatch cannot fix
+that.** The guardrail alarm sums interventions across everyone, so five callers
+blocked once each is indistinguishable from one caller blocked five times — the
+user raised this on 2026-09-23 and it is a real weakness of the deployed shape.
+An alarm binds to a fixed metric identity, so per-caller detection needs either
+one alarm per user or a `SEARCH` expression, and **`PutMetricAlarm` rejects
+SEARCH outright**: *"ValidationError: SEARCH is not supported on Metric
+Alarms."* Two live applies were burned finding that out. Two related schema
+facts from the same attempt: a metric filter carrying `dimensions` may not also
+set `default_value`, and a top-level `period` conflicts with `metric_query`
+blocks (the period goes on the query that reads the metric). The only AWS
+mechanism that does this without naming values ahead of time is Contributor
+Insights — `aws_cloudwatch_contributor_insight_rule` does exist in the provider
+already in use, and `INSIGHT_RULE_METRIC(rule, 'MaxContributorValue')` is
+accepted in alarms where SEARCH is not. Unverified and unbuilt.
+
+**A per-subject counter in the mediation service was built and rejected.** It
+counted interventions per authenticated subject, emitted one event on crossing
+so a single dimensionless alarm covered any number of users, and paused that
+subject for five minutes. The user rejected it — the pause was in-process
+memory, per pod, expiring, with no escalation, and the alert carried no subject
+name — reverted all three commits on 2026-09-23, and the tree is back to the
+fleet-wide sum. Do not rebuild it without asking. What the rejection was really
+about: an alert that names no identity and a containment that lapses leaves the
+responder watching mail arrive. Whatever replaces it has to put the subject in
+the notification and revoke one identity rather than rotating the key for
+everyone.
+
 **Two new rules, 79 to 81.** A platform declaring a guardrail must declare at
 least one alarm with a notification action; and an alarm with no
 `alarm_actions` is refused, because an alarm that tells nobody still counts as
@@ -742,6 +770,24 @@ tool; OpenSearch is the real thing and roughly doubles the current OpenSearch
 bill. Not chosen. The zero-cost seam is an
 `aws_cloudwatch_log_subscription_filter` on both log groups with `count` on an
 empty-by-default `siem_destination_arn`. Not built.
+
+## Rebuilt and live as of 2026-09-23, fourth time — and the live alarms have drifted
+
+Brought back on the user's instruction with the full chain — `infra provision`
+→ `app secrets -f confirm=rotate` → `app release` → `app index -f confirm=index`,
+all green, cluster ACTIVE on 1.36, two pods 1/1 Ready, 14 passages indexed.
+Jump host is `i-0669cead24cffe1e7`; the API server hostname changed again with
+the rebuild, so regenerate `~/.kube/koerber-live.yaml` before any kubectl call.
+**Nothing was torn down at the end of this session — the stack is up and
+billing.**
+
+**The account and the tree disagree about the alarms.** The rejected
+per-subject work was applied live before it was reverted in git, so the account
+carries four alarms and two SNS topics (`-security-alerts-high` /
+`-security-alerts-low`) while the tree declares three alarms and one topic. The
+next push to main reconciles it by destroying the extras — harmless, but a
+`describe-alarms` before that push does not match the code. `/demo` Step 0
+expects three alarms and will read wrong until then.
 
 ## Torn down and rebuilt on 2026-09-23, third time, then down again
 
