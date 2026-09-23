@@ -1,14 +1,14 @@
-output "topic_arn" {
-  description = "SNS topic every security alarm publishes to."
-  value       = aws_sns_topic.security.arn
+output "topic_arns" {
+  description = "SNS topics, keyed by severity. High is the one somebody carries."
+  value       = local.topic_by_severity
 }
 
 output "alarm_names" {
-  description = "The deployed alarms, for the runbook and for evidence."
-  value = sort(concat(
-    [for alarm in aws_cloudwatch_metric_alarm.detection : alarm.alarm_name],
-    [aws_cloudwatch_metric_alarm.guardrail_per_subject.alarm_name],
-  ))
+  description = "The deployed alarms by severity, for the runbook and for evidence."
+  value = {
+    high = sort([for k in keys(local.high_severity) : aws_cloudwatch_metric_alarm.detection[k].alarm_name])
+    low  = sort([for k in keys(local.low_severity) : aws_cloudwatch_metric_alarm.detection[k].alarm_name])
+  }
 }
 
 output "metric_namespace" {

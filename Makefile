@@ -40,7 +40,7 @@ NO_AWS := env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN
 .PHONY: help init fmt validate plan plan-insecure policy policy-plan policy-negative \
         policy-k8s policy-k8s-negative policy-coverage \
         kind-up kind-down k8s-apply k8s-admit \
-        k8s-demo netpol-proof \
+        k8s-demo netpol-proof detection-test \
         ci demo clean
 
 help:
@@ -52,6 +52,7 @@ help:
 	@echo "make policy-negative prove the gate rejects insecure config"
 	@echo "make policy-k8s      prove the workload manifests pass every rule"
 	@echo "make policy-coverage prove every rule fires against a fixture"
+	@echo "make detection-test  prove abuse detection tells one caller from many"
 	@echo "make kind-up         create the local cluster"
 	@echo "make k8s-demo        make a real cluster refuse the bad manifests"
 	@echo "make netpol-proof    prove default-deny egress actually blocks traffic"
@@ -178,7 +179,13 @@ k8s-demo: k8s-apply
 	@echo ""
 	@echo "every insecure manifest was refused by the cluster"
 
-ci: fmt validate policy policy-negative policy-k8s policy-k8s-negative policy-coverage
+# Per-subject abuse detection is the one control CloudWatch cannot express, so
+# it is the one control with no policy rule behind it. This is its proof, and
+# the half that matters is the negative half.
+detection-test:
+	@$(NO_AWS) python3 app/tests/test_abuse.py
+
+ci: fmt validate policy policy-negative policy-k8s policy-k8s-negative policy-coverage detection-test
 	@echo ""
 	@echo "all security gates passed"
 

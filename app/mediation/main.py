@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import answering, config, identity, retrieval, telemetry
+from . import abuse, answering, config, identity, retrieval, telemetry
 
 app = FastAPI(title="genai-assistant mediation layer", docs_url=None, redoc_url=None)
 
@@ -72,6 +72,23 @@ def ask(body: Question, authorization: str | None = Header(default=None)) -> dic
         # No retrieval has happened at this point, which is the intended order.
         raise HTTPException(status_code=401, detail=str(exc)) from exc
 
+    # Before retrieval and before the model: a subject already refused costs
+    # nothing further, in Bedrock spend or in corpus exposure.
+    standing = abuse.check(caller.subject)
+    if standing.refused:
+        telemetry.record(
+            {
+                "event": "subject_request_refused",
+                "subject": caller.subject,
+                "retry_after_seconds": standing.retry_after_seconds,
+            }
+        )
+        raise HTTPException(
+            status_code=429,
+            detail="Too many blocked requests. This identity is paused; contact platform security.",
+            headers={"Retry-After": str(standing.retry_after_seconds)},
+        )
+
     passages = retrieval.search(body.question, caller.groups)
     result = answering.answer(body.question, passages)
 
@@ -85,6 +102,25 @@ def ask(body: Question, authorization: str | None = Header(default=None)) -> dic
             "guardrail_intervened": result["guardrail_intervened"],
         }
     )
+
+    if result["guardrail_intervened"]:
+        verdict = abuse.record_intervention(caller.subject)
+
+        # Emitted once, on the request that crosses. One metric filter counts
+        # this event with no dimensions, so one alarm covers every user the
+        # platform will ever have -- which the fleet-wide sum it replaces
+        # could not do without confusing five unlucky callers for one attacker.
+        if verdict.crossed:
+            telemetry.record(
+                {
+                    "event": "subject_exceeded_guardrail_threshold",
+                    "subject": caller.subject,
+                    "groups": sorted(caller.groups),
+                    "interventions": verdict.count,
+                    "window_seconds": config.ABUSE_WINDOW_SECONDS,
+                    "paused_seconds": verdict.retry_after_seconds,
+                }
+            )
 
     return {
         "answer": result["text"],
