@@ -108,6 +108,12 @@ docs/RUNBOOK.md       operational how-to: prereqs, offline loop, live cluster,
 .claude/skills/ship/  repo-local skill: make ci, commit, push, watch the run
 .claude/skills/demo/  repo-local skill: the presentation walkthrough -- gates, live
                       front end, then a guardrail alarm firing into the alert queue
+.claude/skills/infra-up/    repo-local skill: the whole rebuild chain, RUNBOOK 7c --
+                      infra-provision, app-secrets, app-release, app-index, each
+                      waited green, then the verification and the kubeconfig regen
+.claude/skills/infra-down/  repo-local skill: infra-destroy plus the emptiness
+                      proof; refuses to dispatch without an instruction in the
+                      message it is answering
 ```
 
 Every control is validated by proving it rejects bad input, never only that it
