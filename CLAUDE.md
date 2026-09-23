@@ -893,6 +893,21 @@ baselined, CloudTrail latency). `risk-assessment.md` carries **Component** and
 alarms. The summary is 2,355 words, near the five-page ceiling — if it runs
 over, §5's limitations list overlaps §3.6 and can lose two sentences.
 
-`Slides.md` is still the 478-line deck written before any of this: nothing
-deployed, $0, PII masking and a tool allow-list that were never built. It is
-the last piece of work.
+`Slides.md` is partly reconciled as of 2026-09-23. Its "Live" slide now carries
+the five real captured responses and its six-decision-point table matches what
+the service does (it claimed input-side PII masking and citation verification,
+neither of which exists); the invented payroll-API tool denial is gone. Still
+stale: line 243 "offline — no AWS account, no cost", line 429, and five places
+selling a tool allow-list and tool-denial detections that were never built
+(167, 182, 202, 372, 456).
+
+**The design summary now answers all five §2.2 bullets.** Added on 2026-09-23:
+tool authorization and input/output validation in §3.2, environment separation
+in §3.3 (tfvars per environment, account per environment, workspaces explicitly
+rejected), a new §3.4 on cluster and network controls, a new §3.5 on data
+protection, the rule count corrected to 81, sections renumbered to 3.8, and §5
+now states the fleet-wide-sum weakness with EventBridge subject-naming in the
+thirty-day list. **It is over length:** 2,355 → 3,221 words against a five-page
+ceiling, after trimming detection, SIEM, runbooks, usage and limitations. Either
+cut ~500 more words or move the §3.4/§3.5 enumerations into an appendix, which
+the brief excludes from the count. Not decided.
