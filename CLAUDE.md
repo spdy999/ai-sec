@@ -100,6 +100,8 @@ app/                  the only custom code: mediation service (FastAPI) and its
 docs/RUNBOOK.md       operational how-to: prereqs, offline loop, live cluster,
                       real AWS apply/destroy order, demo, troubleshooting
 .claude/skills/ship/  repo-local skill: make ci, commit, push, watch the run
+.claude/skills/demo/  repo-local skill: the presentation walkthrough -- gates, live
+                      front end, then a guardrail alarm firing into the alert queue
 ```
 
 Every control is validated by proving it rejects bad input, never only that it
@@ -683,23 +685,27 @@ CloudTrail is always writing; the two telemetry alarms stay
 `INSUFFICIENT_DATA` until the first `/ask`. The module README says the zero
 covers a quiet period, which is true only of a quiet period *with traffic*.
 
-**The SNS email was never delivered.** Terraform reports the subscription as
-created; `list-subscriptions-by-topic` shows `PendingConfirmation` and no
-confirmation mail reached the address, twice, including from a plain
-unencrypted topic created by hand as a control. Not diagnosed. The demo-safe
-answer is an SQS subscriber — same-account SQS auto-confirms, and
-`receive-message` showing the alarm JSON is better evidence than an inbox. Not
-built.
+**The SNS email was never delivered, and the queue is the answer.** Terraform
+reports the subscription as created; `list-subscriptions-by-topic` shows
+`PendingConfirmation` and no confirmation mail reached the address, twice,
+including from a plain unencrypted topic created by hand as a control. Still
+not diagnosed. `modules/security-alerting` now also subscribes a CMK-encrypted
+SQS queue: a same-account subscription confirms itself, so `receive-message`
+printing the alarm JSON proves the notification path without anyone clicking a
+link. SNS needs the CMK to deliver into an encrypted queue, which is why
+`sns.amazonaws.com` joined the key's service principals — without it the
+subscription is created, the alarm fires, and the queue stays empty.
 
-**A live alarm demo needs shorter periods.** The alarms are on a 300 second
-period, so a state change takes minutes; the trail-sourced one also inherits
-CloudTrail's five-to-fifteen-minute delivery and cannot be demonstrated live at
-all. Agreed shape, unbuilt: drop `evaluation_period_seconds` to 60 for the two
-telemetry alarms, lower the guardrail threshold to 3, add the SQS subscriber,
-then the sequence is five injections, `describe-alarms` going ALARM, and
-`receive-message` — under two minutes. `bedrock-access-denied` becomes
-pre-staged evidence, triggered from the pod by calling `converse` without the
-guardrail, which the IAM condition refuses.
+**The alarms carry two periods on purpose.** Each detection names its own, so
+the two telemetry alarms sum over 60 seconds (`telemetry_period_seconds`) while
+the trail-sourced one keeps 300 — a shorter window there buys nothing against
+CloudTrail's five-to-fifteen-minute delivery, which is also why
+`bedrock-access-denied` cannot be demonstrated live and stays pre-staged
+evidence, triggered from the pod by calling `converse` without the guardrail,
+which the IAM condition refuses. The guardrail threshold dropped from 5 to 3.
+The demo sequence is three injections, `describe-alarms` going ALARM, then
+`receive-message` off the queue — under three minutes, allowing for the metric
+filter's own delay.
 
 **Two new rules, 79 to 81.** A platform declaring a guardrail must declare at
 least one alarm with a notification action; and an alarm with no
@@ -712,11 +718,11 @@ action list renders as `null` rather than `[]`, so `count` has to be guarded by
 it exists to catch. `make ci` reports "77 of 81 rules proven to reject a
 fixture, 4 exempt".
 
-**`pipeline-iam` gained CloudWatch and SNS actions**, applied by hand on
-2026-09-23 (`0 to add, 1 to change`). That root runs with a person's own
-credentials, so a push does not pick it up; apply it before the first provision
-of a rebuilt environment or the AI layer fails on
-`cloudwatch:PutMetricAlarm`.
+**`pipeline-iam` gained CloudWatch, SNS and then SQS actions**, each a hand
+apply on 2026-09-23 (`0 to add, 1 to change`). That root runs with a
+person's own credentials, so a push does not pick it up; apply it before the
+first provision of a rebuilt environment or the AI layer fails on
+`cloudwatch:PutMetricAlarm` or `sqs:CreateQueue`.
 
 **The mediation service now records refusals.** A 401 wrote no event, so a
 filter for token refusals would have matched nothing — the guardrail failure
