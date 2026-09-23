@@ -654,46 +654,52 @@ summary as a design, not shipped as code. Do not restart it without asking.
 13 seconds and prints 47 lines. Anything added to it has to earn its place
 against that.
 
-## Alerting is built; SIEM is design-only
+## Alerting is built and deployed; SIEM is design-only
 
 The assignment PDF §2.2 lists Operations as a required section of the design
 summary: *"telemetry, SIEM, detections, alerting, runbooks, availability, usage,
-and cost monitoring"*, and §2.1 wants logging, SIEM and incident response on the
-diagram. §3.1 wants each risk to carry an attack scenario, the affected
-component, the business impact, preventive *and* detective controls, and the
-residual. Alerting was a documentation requirement rather than a build
-requirement — four controls are already demonstrated where two are asked for —
-and it was built anyway, because "detections are designed" is a weaker sentence
-than a deployed alarm.
+and cost monitoring"*, and §3.1 wants each risk to carry an attack scenario, the
+affected component, the business impact, preventive *and* detective controls,
+and the residual. Alerting was a documentation requirement rather than a build
+requirement — four controls are demonstrated where two are asked for — and it
+was built anyway, because "detections are designed" is a weaker sentence than a
+deployed alarm.
 
 **`modules/security-alerting`** is a CMK-encrypted SNS topic, a topic policy
 naming `cloudwatch.amazonaws.com` with an `AWS:SourceOwner` condition, an email
 subscription per address, and three metric filter plus alarm pairs:
 `guardrail-interventions` and `authorization-refusals` over the mediation
-telemetry log group, and `bedrock-access-denied` over the trail log group. Each
-is the observable form of a risk — R1, the identity half of R2/R3, and R3's
-detective control. Wired into `bedrock-ai` as `module.alerting`, address passed
-by `tf-config.sh` from `SECURITY_ALERT_EMAIL`, falling back to
-`COST_ALERT_EMAIL`. Outputs `security_alert_topic_arn` and
-`security_alarm_names`.
+telemetry log group, `bedrock-access-denied` over the trail log group. Wired
+into `bedrock-ai` as `module.alerting`; the address comes from
+`SECURITY_ALERT_EMAIL`, falling back to `COST_ALERT_EMAIL`. Applied and
+verified live on 2026-09-23: three filters, three alarms, each carrying the SNS
+action.
 
-**Three things about it that are not obvious.** The filters set
-`default_value = 0`, so a quiet period produces a datapoint instead of
-`INSUFFICIENT_DATA` — an alarm with no data reads as healthy. `treat_missing_data`
-is `missing`, not `notBreaching`, for the opposite reason: with a zero on every
-evaluation, absent data means the log group stopped being written to at all.
-And the CMK's key policy now names `cloudwatch.amazonaws.com` alongside
-`cloudtrail.amazonaws.com`, because an alarm publishes to the encrypted topic as
-the service rather than as the account.
+**`default_value = 0` does not cover an idle service.** A metric filter emits
+the default only when a log event arrives and fails to match, so a log group
+with no traffic at all produces no datapoints and the alarm sits in
+`INSUFFICIENT_DATA`. After a rebuild `bedrock-access-denied` reads `OK` because
+CloudTrail is always writing; the two telemetry alarms stay
+`INSUFFICIENT_DATA` until the first `/ask`. The module README says the zero
+covers a quiet period, which is true only of a quiet period *with traffic*.
 
-**The mediation service had nothing to alarm on for refusals.** A 401 raised an
-`HTTPException` and wrote no event, so a filter for token refusals would have
-matched nothing — the same failure as the guardrail that scanned nothing,
-reproduced in the thing built to detect it. `app/mediation/main.py` now records
-`{"event": "authorization_refused", "reason": ...}` before raising. That is an
-application change, so a push runs `app release` and the pods are replaced —
-which also re-renders `BEDROCK_GUARDRAIL_VERSION` and finally moves them onto
-guardrail version 2, the row-five fix that was set aside.
+**The SNS email was never delivered.** Terraform reports the subscription as
+created; `list-subscriptions-by-topic` shows `PendingConfirmation` and no
+confirmation mail reached the address, twice, including from a plain
+unencrypted topic created by hand as a control. Not diagnosed. The demo-safe
+answer is an SQS subscriber — same-account SQS auto-confirms, and
+`receive-message` showing the alarm JSON is better evidence than an inbox. Not
+built.
+
+**A live alarm demo needs shorter periods.** The alarms are on a 300 second
+period, so a state change takes minutes; the trail-sourced one also inherits
+CloudTrail's five-to-fifteen-minute delivery and cannot be demonstrated live at
+all. Agreed shape, unbuilt: drop `evaluation_period_seconds` to 60 for the two
+telemetry alarms, lower the guardrail threshold to 3, add the SQS subscriber,
+then the sequence is five injections, `describe-alarms` going ALARM, and
+`receive-message` — under two minutes. `bedrock-access-denied` becomes
+pre-staged evidence, triggered from the pod by calling `converse` without the
+guardrail, which the IAM condition refuses.
 
 **Two new rules, 79 to 81.** A platform declaring a guardrail must declare at
 least one alarm with a notification action; and an alarm with no
@@ -706,34 +712,58 @@ action list renders as `null` rather than `[]`, so `count` has to be guarded by
 it exists to catch. `make ci` reports "77 of 81 rules proven to reject a
 fixture, 4 exempt".
 
-**`pipeline-iam` needs a manual apply before the next provision.** The deploy
-role had `logs:*` but no CloudWatch alarm or SNS actions at all; they are named
-explicitly in `oidc.tf` now. That root runs with a person's own credentials, so
-a push alone will not pick it up and the provision fails on `AccessDenied` for
+**`pipeline-iam` gained CloudWatch and SNS actions**, applied by hand on
+2026-09-23 (`0 to add, 1 to change`). That root runs with a person's own
+credentials, so a push does not pick it up; apply it before the first provision
+of a rebuilt environment or the AI layer fails on
 `cloudwatch:PutMetricAlarm`.
 
-**The email subscription needs a human.** AWS sends a confirmation link and
-delivers nothing until it is clicked, while Terraform reports the subscription
-as created. Check with `aws sns list-subscriptions-by-topic` — a subscription
-ARN reading `PendingConfirmation` is an alert nobody receives.
+**The mediation service now records refusals.** A 401 wrote no event, so a
+filter for token refusals would have matched nothing — the guardrail failure
+reproduced in the thing built to detect it. `app/mediation/main.py` records
+`{"event": "authorization_refused", "reason": ...}` before raising.
 
 **SIEM stays design-only, deliberately.** AWS sells no product called a SIEM.
-The four candidates: Security Hub, a findings aggregator and CSPM, single-digit
-dollars a month here; GuardDuty, managed threat detection over CloudTrail, VPC
-and DNS, free for thirty days then about $4 per million events, and it would
-fire on the R3 credential-misuse scenario; Security Lake, an OCSF data lake that
-normalises and stores but brings no query tool; and OpenSearch Service, the real
-thing at real cost — a second collection is another OCU baseline and roughly
-doubles the current OpenSearch bill. Not chosen. The zero-cost option that still
-shows the integration is an `aws_cloudwatch_log_subscription_filter` on both log
-groups with `count` on an empty-by-default `siem_destination_arn`. Not built
-either.
+Security Hub aggregates findings, single-digit dollars a month here; GuardDuty
+adds managed detection over CloudTrail, VPC and DNS, free for thirty days then
+about $4 per million events; Security Lake normalises to OCSF without a query
+tool; OpenSearch is the real thing and roughly doubles the current OpenSearch
+bill. Not chosen. The zero-cost seam is an
+`aws_cloudwatch_log_subscription_filter` on both log groups with `count` on an
+empty-by-default `siem_destination_arn`. Not built.
 
-**Three documentation gaps remain, all in the vault.** The design summary has no
-Operations section: §3.5 covers telemetry, SIEM and detection, while alerting
-(now deployed), runbooks (`docs/RUNBOOK.md` is never cited), availability, usage
-and cost monitoring are missing — and cost monitoring is a shipped control that
-goes unmentioned. `design-summary.md:158` claims "a log group the SIEM
-subscribes to", which is true of nothing deployed. The risk assessment names no
-affected component and no business impact, both required by §3.1, and R5's
-residual — "nothing alerts on a spike in guardrail blocks" — is now wrong.
+## Torn down and rebuilt on 2026-09-23, second time
+
+Destroyed on the user's instruction, then brought back the same session:
+`infra provision` → `app secrets -f confirm=rotate` → `app release` →
+`app index -f confirm=index`, all green, 14 passages indexed, two pods 1/1
+Ready on the current digest — so the pods are on guardrail version 2 and row
+five now refuses at the guardrail rather than at the model. `app-secrets`
+requires `confirm=rotate`, which is easy to forget: a bare dispatch fails with
+HTTP 422.
+
+A rebuild issues a new cluster endpoint and CA, so `~/.kube/koerber-live.yaml`
+must be regenerated with `aws eks update-kubeconfig --name genai-assistant-prod
+--kubeconfig ~/.kube/koerber-live.yaml --alias koerber-live` before any kubectl
+call. The jump host is `genai-assistant-prod-bastion`; the other running
+instance is the node, tagged `mediation`.
+
+**The monthly budget is $5, not $50** (`d97f234`), deliberately: against a
+platform that runs at roughly $17/day every forecast threshold breaches on the
+first evaluation, which proves the notification path rather than waiting a
+month to find out it does not work. Budgets email needs no confirmation click,
+unlike SNS, so it doubles as a deliverability test for that address.
+
+**Both vault deliverables now satisfy the brief's required fields.**
+`design-summary.md` has a §3.6 Operations covering alerting, the SIEM decision
+and its seam, runbooks, availability, and usage and cost monitoring; the false
+"a log group the SIEM subscribes to" line is gone; §4 lists the detection layer
+and §5's limitations are the real ones (thresholds chosen rather than
+baselined, CloudTrail latency). `risk-assessment.md` carries **Component** and
+**Business impact** on every risk, and R5 is rewritten around the deployed
+alarms. The summary is 2,355 words, near the five-page ceiling — if it runs
+over, §5's limitations list overlaps §3.6 and can lose two sentences.
+
+`Slides.md` is still the 478-line deck written before any of this: nothing
+deployed, $0, PII masking and a tool allow-list that were never built. It is
+the last piece of work.
