@@ -40,15 +40,21 @@ variable "alert_emails" {
 }
 
 variable "evaluation_period_seconds" {
-  description = "Window each alarm sums over."
+  description = "Window the trail-sourced alarm sums over. CloudTrail delivers on its own five to fifteen minute schedule, so a shorter window here buys nothing."
   type        = number
   default     = 300
+}
+
+variable "telemetry_period_seconds" {
+  description = "Window the two telemetry alarms sum over. Short, because these read a log group the service writes to synchronously, and a detection nobody can watch change state is one nobody trusts."
+  type        = number
+  default     = 60
 }
 
 variable "guardrail_intervention_threshold" {
   description = "Interventions in one period before the alarm fires. Above one, because a single block is the control working as designed and paging on it trains people to ignore the alert."
   type        = number
-  default     = 5
+  default     = 3
 }
 
 variable "authorization_refusal_threshold" {

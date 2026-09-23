@@ -27,13 +27,31 @@ knowing.
 The thresholds are deliberately above one. A single guardrail block is the
 control working as designed; paging on it teaches people to ignore the alert.
 
+Each detection carries its own period. The two telemetry alarms sum over 60
+seconds, because the service writes those events synchronously and a detection
+nobody can watch change state is one nobody trusts. The trail-sourced alarm
+keeps 300: CloudTrail delivers on its own five to fifteen minute schedule, so a
+shorter window there buys nothing and only makes the alarm flap.
+
 **The email subscription needs a human.** AWS sends a confirmation link and
 delivers nothing until it is clicked, while Terraform reports the subscription
 as created. A green apply is not evidence the alert arrives — confirm it, then
 `aws sns list-subscriptions-by-topic` and check the ARN is not
 `PendingConfirmation`.
 
+**The queue does not.** The topic also delivers to an SQS queue, and a
+same-account subscription confirms itself. That is the provable half of the
+notification path: `receive-message` printing the alarm JSON shows the message
+was produced, routed and delivered, where an inbox shows only that nothing
+arrived. On this account nothing ever did, twice, including from a plain
+unencrypted topic created by hand as a control — undiagnosed, and the reason
+the queue exists. Messages are kept a day; the trail and the log groups are the
+record, this is evidence for the first minutes of an investigation.
+
 The topic is encrypted with the platform CMK, so that key's policy must name
 `cloudwatch.amazonaws.com`: an alarm publishes as the service rather than as
 the account, and without the grant the alarm transitions and the message is
-never delivered.
+never delivered. The queue is encrypted with the same key, which adds
+`sns.amazonaws.com` to that list for the same reason one step further along —
+without it the subscription is created, the alarm fires, and the queue stays
+empty with nothing logged to say why.

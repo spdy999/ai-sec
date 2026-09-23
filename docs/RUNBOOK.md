@@ -432,10 +432,19 @@ Why each wait matters:
     output -raw security_alert_topic_arn)" --query 'Subscriptions[].SubscriptionArn'
   ```
 
-  A value reading `PendingConfirmation` is an alarm nobody receives.
+  A value reading `PendingConfirmation` is an alarm nobody receives. The topic
+  also delivers to an SQS queue, which needs no confirmation and is therefore
+  the path to check:
+
+  ```bash
+  QUEUE=$(aws sqs get-queue-url --queue-name genai-assistant-prod-security-alerts \
+    --query QueueUrl --output text)
+  aws sqs receive-message --queue-url "$QUEUE" --wait-time-seconds 20 \
+    --query 'Messages[].Body' --output text | jq -r '.Message | fromjson'
+  ```
 - **`pipeline-iam` is applied by hand, and it gained permissions.** The deploy
-  role needs `cloudwatch:PutMetricAlarm` and the `sns:` actions for the alerting
-  module. That root runs with a person's own credentials, so a push does not
+  role needs `cloudwatch:PutMetricAlarm` and the `sns:` and `sqs:` actions for
+  the alerting module. That root runs with a person's own credentials, so a push does not
   pick it up; apply it before the first provision or the AI layer fails on
   `AccessDenied`.
 

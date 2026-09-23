@@ -177,6 +177,19 @@ data "aws_iam_policy_document" "deploy_infrastructure" {
       "sns:GetSubscriptionAttributes",
       "sns:ListSubscriptionsByTopic",
 
+      # The topic also delivers to a queue, because an email subscription is
+      # only confirmed by a human clicking a link and this account never
+      # received one.
+      "sqs:CreateQueue",
+      "sqs:DeleteQueue",
+      "sqs:GetQueueUrl",
+      "sqs:GetQueueAttributes",
+      "sqs:SetQueueAttributes",
+      "sqs:ListQueues",
+      "sqs:ListQueueTags",
+      "sqs:TagQueue",
+      "sqs:UntagQueue",
+
       "sts:GetCallerIdentity",
 
       # The deploy job resolves the jump host AMI from the public Amazon Linux

@@ -75,6 +75,7 @@ locals {
       metric      = "GuardrailInterventions"
       pattern     = "{ $.event = \"question_answered\" && $.guardrail_intervened IS TRUE }"
       threshold   = var.guardrail_intervention_threshold
+      period      = var.telemetry_period_seconds
       description = "Guardrail blocked several requests in one period: an injection attempt being worked through, or a caller probing the corpus."
     }
 
@@ -83,6 +84,7 @@ locals {
       metric      = "AuthorizationRefusals"
       pattern     = "{ $.event = \"authorization_refused\" }"
       threshold   = var.authorization_refusal_threshold
+      period      = var.telemetry_period_seconds
       description = "The mediation layer refused several tokens in one period: a forged, expired or replayed token rather than a user mistyping one."
     }
 
@@ -91,6 +93,7 @@ locals {
       metric      = "BedrockAccessDenied"
       pattern     = "{ ($.eventSource = \"bedrock*\") && ($.errorCode = \"*AccessDenied*\") }"
       threshold   = 1
+      period      = var.evaluation_period_seconds
       description = "A principal was refused a Bedrock call. The workload's own path is authorised, so this is an identity being used for something it was not granted."
     }
   }
@@ -121,7 +124,7 @@ resource "aws_cloudwatch_metric_alarm" "detection" {
   namespace   = local.namespace
   metric_name = each.value.metric
   statistic   = "Sum"
-  period      = var.evaluation_period_seconds
+  period      = each.value.period
 
   comparison_operator = "GreaterThanOrEqualToThreshold"
   threshold           = each.value.threshold
@@ -136,4 +139,58 @@ resource "aws_cloudwatch_metric_alarm" "detection" {
   ok_actions    = [aws_sns_topic.security.arn]
 
   depends_on = [aws_cloudwatch_log_metric_filter.detection]
+}
+
+# The email subscription is the operational path. It is not a provable one:
+# AWS sends a confirmation link, delivers nothing until someone clicks it, and
+# on this account nothing ever arrived -- twice, including from a plain
+# unencrypted topic created by hand as a control. A same-account SQS
+# subscription needs no confirmation, so this queue is what demonstrates that
+# the topic delivers at all. `receive-message` printing the alarm JSON is
+# better evidence than an inbox.
+resource "aws_sqs_queue" "alerts" {
+  name = "${var.name_prefix}-${var.environment}-security-alerts"
+
+  # Alert bodies name identities, log groups and metric values, so the queue is
+  # encrypted with the same CMK as the topic. SNS then needs the key too, which
+  # is why sns.amazonaws.com is a named principal on the key policy: without it
+  # the subscription is created, the alarm publishes, and the queue stays empty.
+  kms_master_key_id                 = var.kms_key_arn
+  kms_data_key_reuse_period_seconds = 300
+
+  # Evidence for a demo and for the first minutes of an investigation, not a
+  # record. The trail and the log group are the record.
+  message_retention_seconds = 86400
+}
+
+data "aws_iam_policy_document" "queue" {
+  statement {
+    sid       = "AllowTheAlertTopicToDeliver"
+    effect    = "Allow"
+    actions   = ["sqs:SendMessage"]
+    resources = [aws_sqs_queue.alerts.arn]
+
+    principals {
+      type        = "Service"
+      identifiers = ["sns.amazonaws.com"]
+    }
+
+    # Service principal alone would let any topic in any account deliver here.
+    condition {
+      test     = "ArnEquals"
+      variable = "aws:SourceArn"
+      values   = [aws_sns_topic.security.arn]
+    }
+  }
+}
+
+resource "aws_sqs_queue_policy" "alerts" {
+  queue_url = aws_sqs_queue.alerts.id
+  policy    = data.aws_iam_policy_document.queue.json
+}
+
+resource "aws_sns_topic_subscription" "queue" {
+  topic_arn = aws_sns_topic.security.arn
+  protocol  = "sqs"
+  endpoint  = aws_sqs_queue.alerts.arn
 }

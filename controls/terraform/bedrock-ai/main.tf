@@ -48,7 +48,10 @@ module "encryption" {
   # is created and delivers nothing.
   # CloudWatch encrypts the security alert topic with this key when an alarm
   # publishes, and it publishes as the service rather than as the account.
-  service_principals = ["cloudtrail.amazonaws.com", "cloudwatch.amazonaws.com"]
+  # SNS needs it in turn to deliver that message into the encrypted alert
+  # queue: without the grant the subscription is created, the alarm fires, and
+  # the queue stays empty with nothing logged anywhere.
+  service_principals = ["cloudtrail.amazonaws.com", "cloudwatch.amazonaws.com", "sns.amazonaws.com"]
 }
 
 # The source corpus: private, CMK-encrypted, TLS-only, versioned so a poisoned

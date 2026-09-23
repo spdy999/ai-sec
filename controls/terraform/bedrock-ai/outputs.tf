@@ -67,3 +67,8 @@ output "security_alarm_names" {
   description = "Deployed alarms, for the runbook and for evidence."
   value       = module.alerting.alarm_names
 }
+
+output "security_alert_queue_url" {
+  description = "Queue the alert topic also delivers to. A same-account SQS subscription confirms itself, so reading this queue proves the notification path without anyone clicking a link."
+  value       = module.alerting.alert_queue_url
+}
