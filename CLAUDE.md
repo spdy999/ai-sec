@@ -524,11 +524,10 @@ deadlocks, because replacement is destroy-first and the endpoints still hold it
 — `name_prefix` plus `create_before_destroy` is the pair that fixes it, neither
 alone.
 
-**Resources are live and billing as of the end of this session.** An
+**Superseded: resources were live at the end of that session.** An
 `infra provision` run was still applying. The cluster, nodes and addons all
 reached ACTIVE on upstream; the remaining failures were the endpoint security
-group churn above. Check the run and dispatch `infra-destroy.yml` before leaving
-it — roughly $17/day.
+group churn above. Nothing is running now — see the third rebuild above.
 
 **The deploy role is service-scoped where it must be, resource-scoped where it
 can be.** `ec2:*`, `eks:*`, `kms:*` and friends act on resources that do not
@@ -737,6 +736,50 @@ tool; OpenSearch is the real thing and roughly doubles the current OpenSearch
 bill. Not chosen. The zero-cost seam is an
 `aws_cloudwatch_log_subscription_filter` on both log groups with `count` on an
 empty-by-default `siem_destination_arn`. Not built.
+
+## Torn down and rebuilt on 2026-09-23, third time, then down again
+
+The invoice showed a separate `ExtendedSupport` line under EKS: the cluster was
+on **1.31**, out of standard support since 2025-11-26, billing $0.50/hour
+instead of $0.10 -- $12/day on a platform that otherwise runs at $17. The
+default is now **1.36**, the current EKS default. Check
+`aws eks describe-cluster-versions` before pinning one; EKS refuses to skip
+minors, so the fix on a live cluster is five sequential upgrades or a rebuild.
+`KUBECTL_VERSION` in `app-deploy.yml` moved with it -- kubectl supports one
+minor of skew and a v1.31 client against a 1.36 server is five out.
+
+Rebuilt clean on 1.36, then destroyed again at the end of the session on the
+user's instruction. Nothing is running.
+
+**The alerting prerequisites are built and the delivery path is proven.** Each
+detection now names its own period, the guardrail threshold is 3, and the topic
+also delivers to a CMK-encrypted SQS queue whose subscription self-confirmed
+(the email one is still `PendingConfirmation`). Proven by forcing the alarm
+with `cloudwatch set-alarm-state` and reading the message back off the queue --
+that is the check that exercises the `sns.amazonaws.com` KMS grant, which fails
+silently without it. The alarm was reset to `INSUFFICIENT_DATA` afterwards and
+the queue purged: `treat_missing_data = missing` keeps the last state, so an
+alarm left in ALARM poisons the next preflight.
+
+**`/demo` is written and rehearsed as far as the front end.** Preflight, gates,
+front end and the alarm sequence. Steps 0 to 2 were run end to end on
+2026-09-23 -- cluster and jump host checks, `make demo`, the SSM tunnel, both
+tokens minted in the pod, and the front end answering `HTTP 200` at
+`https://127.0.0.1:8443/`. The four demo rows and Step 3's alarm sequence were
+**not** run; the stack came down first. One correction the rehearsal found:
+building the kubectl invocation in a shell variable breaks under nu, so each
+call has to be written out in full.
+
+**Actions were bumped off the Node 20 runtime**, `actions/checkout` v4 to v7
+and `hashicorp/setup-terraform` v3 to v4. Every breaking change between them is
+a Node 24 runtime bump, plus checkout v6 writing credentials to a separate file
+and v7 refusing fork checkouts under `pull_request_target`; this repo does
+neither. `aws-actions/configure-aws-credentials@v4` is still on Node 20 and
+still to do -- v6.3.0 is the fix and is safe here, since all six call sites
+pass three string inputs and no booleans, and v5's only breaking change is
+invalid-boolean handling. It was left because bumping it touches
+`app-index.yml`, and a push-triggered index runs `--recreate` unguarded: the
+typed confirmation gates only a dispatch.
 
 ## Torn down and rebuilt on 2026-09-23, second time
 
