@@ -178,15 +178,9 @@ resource "aws_cloudwatch_metric_alarm" "guardrail_per_subject" {
   treat_missing_data  = "missing"
 
   metric_query {
-    id         = "per_subject"
-    expression = "SEARCH('{${local.namespace},Subject} MetricName=\"GuardrailInterventions\"', 'Sum', ${var.telemetry_period_seconds})"
-    label      = "GuardrailInterventions by Subject"
-    # The top-level alarm can't carry period alongside metric_query blocks
-    # (the provider schema rejects the combination), and this is the one
-    # query CloudWatch actually reads a period from -- MAX(per_subject) below
-    # inherits it. Leaving it off reproduces AWS's own "Period must not be
-    # null", which names no resource and reads like a provider bug.
-    period      = var.telemetry_period_seconds
+    id          = "per_subject"
+    expression  = "SEARCH('{${local.namespace},Subject} MetricName=\"GuardrailInterventions\"', 'Sum', ${var.telemetry_period_seconds})"
+    label       = "GuardrailInterventions by Subject"
     return_data = false
   }
 
