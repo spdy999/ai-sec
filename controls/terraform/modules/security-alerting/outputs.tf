@@ -5,10 +5,7 @@ output "topic_arn" {
 
 output "alarm_names" {
   description = "The deployed alarms, for the runbook and for evidence."
-  value = sort(concat(
-    [for alarm in aws_cloudwatch_metric_alarm.detection : alarm.alarm_name],
-    [aws_cloudwatch_metric_alarm.guardrail_per_subject.alarm_name],
-  ))
+  value       = sort([for alarm in aws_cloudwatch_metric_alarm.detection : alarm.alarm_name])
 }
 
 output "metric_namespace" {

@@ -77,16 +77,6 @@ locals {
       threshold   = var.guardrail_intervention_threshold
       period      = var.telemetry_period_seconds
       description = "Guardrail blocked several requests in one period: an injection attempt being worked through, or a caller probing the corpus."
-      # Dimensioned by subject, not summed across everyone -- five different
-      # callers each getting one benign block in the same minute must not read
-      # the same as one caller trying six phrasings. Handled by its own alarm
-      # below, keyed on this filter's dimension rather than the plain
-      # namespace/metric aggregate the others use. authorization-refusals
-      # can't take the same treatment: a refusal fires because the token
-      # didn't verify, so there is no authenticated subject to key on -- only
-      # PyJWT's unverified claims, and dimensioning on those would be alarming
-      # on attacker-controlled input.
-      dimensions = { Subject = "$.subject" }
     }
 
     authorization-refusals = {
@@ -96,7 +86,6 @@ locals {
       threshold   = var.authorization_refusal_threshold
       period      = var.telemetry_period_seconds
       description = "The mediation layer refused several tokens in one period: a forged, expired or replayed token rather than a user mistyping one."
-      dimensions  = null
     }
 
     bedrock-access-denied = {
@@ -106,7 +95,6 @@ locals {
       threshold   = 1
       period      = var.evaluation_period_seconds
       description = "A principal was refused a Bedrock call. The workload's own path is authorised, so this is an identity being used for something it was not granted."
-      dimensions  = null
     }
   }
 }
@@ -119,23 +107,16 @@ resource "aws_cloudwatch_log_metric_filter" "detection" {
   pattern        = each.value.pattern
 
   metric_transformation {
-    name      = each.value.metric
-    namespace = local.namespace
-    value     = "1"
-    unit      = "Count"
-
-    # A dimensioned filter can't carry a default_value: there is no dimension
-    # value -- no subject -- for CloudWatch to attach a zero reading to. The
-    # aggregate filters keep emitting zero so a quiet period still produces a
-    # datapoint; the per-subject one simply has no series for a subject who
-    # never tripped it, which is the correct silence rather than a gap.
-    default_value = each.value.dimensions == null ? 0 : null
-    dimensions    = each.value.dimensions
+    name          = each.value.metric
+    namespace     = local.namespace
+    value         = "1"
+    default_value = 0
+    unit          = "Count"
   }
 }
 
 resource "aws_cloudwatch_metric_alarm" "detection" {
-  for_each = { for k, v in local.detections : k => v if v.dimensions == null }
+  for_each = local.detections
 
   alarm_name        = "${var.name_prefix}-${var.environment}-${each.key}"
   alarm_description = each.value.description
@@ -153,43 +134,6 @@ resource "aws_cloudwatch_metric_alarm" "detection" {
   # group stopped being written to at all. That is itself worth knowing, and
   # notBreaching would hide it; missing keeps the alarm's last known state.
   treat_missing_data = "missing"
-
-  alarm_actions = [aws_sns_topic.security.arn]
-  ok_actions    = [aws_sns_topic.security.arn]
-
-  depends_on = [aws_cloudwatch_log_metric_filter.detection]
-}
-
-# guardrail-interventions alone: a per-subject metric, evaluated with the
-# worst subject in the period rather than the sum of all of them. SEARCH finds
-# every Subject-dimensioned series under this metric without naming any of
-# them ahead of time -- alice and dana today, whoever the workload serves
-# next without a Terraform change. MAX takes the busiest one each period, so
-# the alarm fires on "one caller crossed the threshold," which five unrelated
-# benign refusals in the same minute cannot do since no single subject among
-# them reaches it alone.
-resource "aws_cloudwatch_metric_alarm" "guardrail_per_subject" {
-  alarm_name        = "${var.name_prefix}-${var.environment}-guardrail-interventions"
-  alarm_description = local.detections["guardrail-interventions"].description
-
-  comparison_operator = "GreaterThanOrEqualToThreshold"
-  threshold           = var.guardrail_intervention_threshold
-  evaluation_periods  = 1
-  treat_missing_data  = "missing"
-
-  metric_query {
-    id          = "per_subject"
-    expression  = "SEARCH('{${local.namespace},Subject} MetricName=\"GuardrailInterventions\"', 'Sum', ${var.telemetry_period_seconds})"
-    label       = "GuardrailInterventions by Subject"
-    return_data = false
-  }
-
-  metric_query {
-    id          = "worst_subject"
-    expression  = "MAX(per_subject)"
-    label       = "Busiest subject"
-    return_data = true
-  }
 
   alarm_actions = [aws_sns_topic.security.arn]
   ok_actions    = [aws_sns_topic.security.arn]
