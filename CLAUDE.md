@@ -502,12 +502,26 @@ not start. Never prune the user's podman volumes or stopped containers.
 Controls 1 and 2 are complete and validated in both directions. Control 3 ran
 for the first time on 2026-09-21 and is green — it failed twice first, on a
 missing `terraform init` before `validate` and on a trivy-action tag that does
-not exist (upstream tags are `v`-prefixed). The README is written, including the section
-on what the local cluster cannot prove (IRSA federating with STS, EKS access
-entries, CMK envelope encryption of etcd, control plane audit logs reaching
-CloudWatch). `docs/RUNBOOK.md` is written: operational (how to run things);
-README stays the reviewer-facing what/why/proof doc — don't duplicate content
-between them.
+not exist (upstream tags are `v`-prefixed). `docs/RUNBOOK.md` is operational
+(what to type, in what order); README stays the reviewer-facing what/why/proof
+doc — don't duplicate content between them.
+
+**Both documents present the AWS path and nothing else**, rewritten 2026-09-24:
+*"remove all local tools out from all document, now we are going to use only in
+aws, dont make the presentation confuse."* Gone from both: the `make` targets,
+the kind/podman/helm prerequisites, the offline gate loop, the by-hand
+`terraform apply`, and the "what the local cluster cannot prove" section. The
+Makefile and its targets are untouched in code — only the documents changed. The
+policy-gate evidence is re-anchored to the workflow job that enforces each claim
+(`security.yml` infrastructure / workload / secret / scan gates, the saved-plan
+gate inside `infra-provision.yml`, the rendered-manifest gate in
+`app-deploy.yml`), which is stronger than "type `make ci`" because a reviewer can
+open the run. The privileged-pod admission proof survives: `security.yml` starts
+a kind cluster *in CI*. README also gained prerequisites, a zero-to-live deploy
+chain, the five prompt rows, assumptions and limitations, because the brief asks
+for exactly those. **The user rejects the section sign** — cross-references are
+markdown anchor links, and a linked heading must carry no em dash (GitHub slugs
+it to a double hyphen).
 
 **Provisioned once, torn down, now rebuilt on the upstream module.** The first
 live run on 2026-09-21 took six rounds of fixes, every one of which the offline
@@ -666,24 +680,45 @@ rebuilds it, so a failed reindex leaves the service answering nothing, and a
 corpus edit now triggers that automatically. Index into a new name and swap an
 alias at the end.
 
-**Both written deliverables are drafted**, in the vault's `Assignment/` folder
-rather than the repo: `design-summary.md` (about five pages — threat model, four
-trust boundaries, five controls with the guardrail finding as the centrepiece,
-what was deployed and proven, trade-offs) and `risk-assessment.md` (five risks,
-each with evidence, controls, detection, residual and actions; index rebuild
-noted below the five as availability). Neither is reviewed yet.
+**The four deliverables now live in the repo**, at `docs/deliverables/`, copied
+out of the vault on 2026-09-24 on the user's instruction. `design-summary.md`
+(threat model, four trust boundaries, five controls with the guardrail finding
+as the centrepiece), `risk-assessment.md` (five risks with evidence, controls,
+detection, residual and actions), `Slides.md` (the Marp deck), and
+`diagram/architecture.md` with its renders. The vault copies were left in place
+— deleting them was not authorised — so the repo is the one to edit and the
+vault copies are now stale. `Pricing.md`, the brief and the stale `.pptx` /
+`.html` exports stayed behind.
 
-`Slides.md` in the same folder is a 478-line Marp deck written before the live
-deployment. It still says nothing is deployed and costs $0, and demos PII
-masking and a tool allow-list that were never built. Reconciling it with the two
-documents is the next job.
+**The diagram was redrawn on 2026-09-24** against the deployed system. It had
+carried the same fabrications as the old deck: a tool executor and tool
+allow-list, WAF and API Gateway, input-side PII masking, citation verification,
+`InvokeModel + guardrailIdentifier` (the combination that scans nothing), a
+Bedrock → CloudWatch invocation-logging arrow, SIEM drawn as a component, and
+"Nothing here is deployed" in its limitations. Now: four trust boundaries with
+the jump host as its own operator zone (the only writer), `Converse` with the
+reason stated, CloudTrail, and the three-alarm → SNS → SQS chain. Three renders
+— `architecture-overview.png`, `request-path.png`, `identity-permissions.png`;
+the old `-tall.png` is deleted. `architecture-eli5.drawio` is still the
+pre-deployment shape and cannot be regenerated from source.
 
-**Teardown and rebuild is written down** — RUNBOOK §7: what survives a destroy,
-the emptiness check, the rebuild chain `infra-provision` → `app-secrets` →
-`app-release` → `app-index` with the reason for each wait, and the manual five
-minutes. Roughly 5 minutes down, 25-30 back up, plus 5 by hand. §4b's old
-"always tear down after a live session" line is gone; it contradicted the
-standing rule.
+Render mermaid with Chrome, which Puppeteer does not bundle here:
+
+```bash
+printf '{"executablePath":"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome","args":["--no-sandbox"]}' > pptr.json
+npx @mermaid-js/mermaid-cli -p pptr.json -i architecture.md -o out.md
+```
+
+A semicolon inside a `note over` breaks a sequence diagram — mermaid treats it
+as a statement separator, and the parse error points at the line without saying
+why.
+
+**Teardown and rebuild is written down** — RUNBOOK section 7: what survives a
+destroy, the emptiness check, the rebuild chain `infra-provision` →
+`app-secrets` → `app-release` → `app-index` with the reason for each wait, and
+the manual five minutes. Roughly 5 minutes down, 25-30 back up, plus 5 by hand.
+The old "always tear down after a live session" line is gone; it contradicted
+the standing rule.
 
 
 **The `ApplyGuardrail` test harness is cut, deliberately.** Measuring the real
