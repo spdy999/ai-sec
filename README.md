@@ -342,7 +342,7 @@ it accepts good input. All of it runs in the pipeline.
 |---|---|---|
 | The AI layer satisfies every rule | 81 rules, 0 violations | `security.yml`, infrastructure policy gate |
 | The platform layer satisfies every rule | 81 rules against the saved plan, immediately before it is applied | `infra-provision.yml` |
-| The gate refuses insecure infrastructure | 60 violations found in the deliberately broken fixture | `security.yml`, negative test |
+| The gate refuses insecure infrastructure | 65 violations found in the deliberately broken fixture | `security.yml`, negative test |
 | The gate refuses insecure workloads | 29 violations found in `controls/kubernetes/bad/` | `security.yml`, workload policy gate |
 | A real API server refuses a privileged pod | admission rejects it with `violates PodSecurity` | `security.yml`, workload policy gate |
 | The rendered manifests are gated, not only the committed ones | the policy runs after real identifiers are substituted | `app-deploy.yml` |

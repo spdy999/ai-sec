@@ -265,26 +265,27 @@ Explain the negative test explicitly: a policy that has only ever returned
 
 <!-- _class: demo -->
 
-# Live: `make demo`
+# Live: the gate refuses
 
 ```
-29 tests, 29 passed, 0 failures          ← the real module
+security.yml · infrastructure policy gate
+  bedrock-ai layer: 81 rules against 1 document, no violations
 
-FAIL - residency: region "us-east-1" outside EU allow-list
-FAIL - iam: grants Action "*"
-FAIL - iam: trusts service account pattern
-       system:serviceaccount:*:*
-FAIL - encryption: uses "AES256", CMK required
-FAIL - network: vector store allows public access
-... 10 failures total
+  insecure Terraform fixture: 65 violations found and refused
+    residency: region "us-east-1" outside the EU allow-list
+    iam:       grants Action "*"
+    iam:       trusts system:serviceaccount:*:*
+    encryption: uses "AES256", a customer-managed key is required
+    network:   vector store allows public access
 
-negative test passed: gate rejected insecure configuration
+  coverage: 77 of 81 rules proven to reject a fixture, 4 exempt
 ```
 
-**Ten problems caught. Merge blocked.**
+**A clean run of the negative test is itself a build failure.**
 
 <!--
-Run this live. It takes about ten seconds and needs no network.
+This is the pipeline on the commit under review, not a workstation. Open the run
+if asked.
 
 If asked what it does not prove: it validates configuration, not live AWS
 runtime behaviour. Say that before being asked.
@@ -443,14 +444,11 @@ working as designed, and paging on it teaches people to ignore the alert.
 # Live: Kubernetes and pipeline
 
 ```
-$ make k8s-demo        # four manifests, a real API server
-privileged-pod            refused  PodSecurity restricted
-wildcard-rbac             refused  Kyverno: no * on *
-public-image              refused  Kyverno: mutable tag, no limits
-default-identity-pod      refused  Kyverno: no workload identity
-
-$ make policy-negative # the insecure plan must fail
-37 violations found and refused — a clean run fails the build
+security.yml · workload policy gate
+  workload manifests: 81 rules against 7 documents, no violations
+  insecure workload manifests: 29 violations found and refused
+  admission must refuse the privileged pod
+    Error ... violates PodSecurity "restricted:latest"
 ```
 
 **Pipeline gates**
@@ -461,10 +459,10 @@ $ make policy-negative # the insecure plan must fail
 - **No long-lived AWS keys** — OIDC federation only
 
 <!--
-The four manifests go at a real kind API server with real admission webhooks,
-not a simulation. Three more are refused by the offline gate only, because a
-cluster accepts them without complaint — an unlabelled namespace and an
-0.0.0.0/0 NetworkPolicy are valid Kubernetes and invalid here.
+This is a pipeline run, not a workstation: every line is from security.yml on
+the commit under review. The last one is a real API server — CI starts a kind
+cluster and throws the privileged pod at it, so admission refuses it rather than
+a linter predicting that it would.
 
 If asked about approvals: there is no manual approval gate. Required reviewers
 need a paid plan on a private repository. The gate is the policy chain every run
@@ -479,7 +477,7 @@ carries, plus a typed confirm=destroy on the teardown.
 |---|---|---|
 | AI layer config | `terraform plan` rendered offline, 81 rules | no |
 | Policy gate itself | Insecure fixture must fail; coverage gate | no |
-| Kubernetes controls | Local `kind` cluster, real admission | no |
+| Kubernetes controls | A `kind` cluster started in CI, real admission | no |
 | Platform layer config | Gated inside the applying run, from the saved plan | yes |
 | Entitlement filtering | Two identities, same question, different answers | yes |
 | Guardrail and masking | Live calls to the deployed guardrail | yes |
