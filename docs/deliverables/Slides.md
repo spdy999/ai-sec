@@ -219,13 +219,13 @@ answer is a soft one that injection defeats.
 
 # Top 5 risks
 
-| # | Risk | Preventive | Detective | Residual |
+| # | What could go wrong | How it is prevented | How it is noticed | Residual |
 |---|---|---|---|---|
-| 1 | A guardrail attached and scanning nothing | `Converse` with guard content, version pinned | Guardrail-intervention alarm; a sustained zero is the tell | **High** — block rate not measured |
-| 2 | Entitlement filtering is only as good as the label | Audience on every passage, filtered before retrieval | Authorisation-refusal alarm | Medium |
-| 3 | The pipeline is the highest-privilege identity | OIDC, no stored keys, two denies on the role | `AccessDenied` in the trail | Medium |
-| 4 | Residency depends on a profile AWS controls | Region allow-list in IAM and endpoint policy | No alarm on profile membership | Medium |
-| 5 | The trail proves a call happened, not what was asked | Prompt text deliberately never stored | CloudTrail data events on the guardrail | Low |
+| 1 | The guardrail looks fine and checks nothing | `Converse`, question in guard content, version pinned | Alarm on interventions — a flat zero is the tell | **High** — block rate not measured |
+| 2 | A document labelled wrongly reaches the wrong people | Audience on every passage, filtered before retrieval | Alarm on authorisation refusals | Medium |
+| 3 | Whoever can merge can change the platform | OIDC, no stored keys, two denies on the deploy role | `AccessDenied` in CloudTrail | Medium |
+| 4 | AWS decides which region the model runs in | EU allow-list in IAM **and** the VPC endpoint policy | Nothing watches this — named gap | Medium |
+| 5 | Logs show who asked, not what they asked | Prompt text never stored, on purpose | CloudTrail data events on the guardrail | Low |
 
 <!--
 Risk 1 residual is deliberately marked High. Anyone claiming prompt injection
