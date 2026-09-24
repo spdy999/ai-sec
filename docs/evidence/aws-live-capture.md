@@ -170,6 +170,56 @@ rendered against.
 Single-region on purpose: a multi-region trail would pull events from outside
 the EU allow-list into this account's log store.
 
+### What an audit record actually contains
+
+A `Converse` event from the trail, captured 2026-09-24. Every field is here:
+
+```json
+{
+  "eventName": "Converse",
+  "eventSource": "bedrock.amazonaws.com",
+  "awsRegion": "eu-central-1",
+  "eventTime": "2026-09-24T02:57:05Z",
+  "userIdentity": {
+    "type": "AssumedRole",
+    "arn": "arn:aws:sts::891377211626:assumed-role/genai-assistant-prod-mediation/..."
+  },
+  "requestParameters": {
+    "modelId": "eu.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    "inferenceConfig": { "maxTokens": 800 },
+    "guardrailConfig": {
+      "guardrailIdentifier": "y2udzznximxl",
+      "guardrailVersion": "1",
+      "trace": "enabled"
+    }
+  },
+  "responseElements": null,
+  "readOnly": true,
+  "managementEvent": true
+}
+```
+
+There is no `messages` key. Bedrock records which model was called, in which
+region, under which identity, with which guardrail — and not one word of the
+question or the answer. `responseElements` is null for the same reason.
+
+The mediation service's own telemetry, from
+`/aws/eks/genai-assistant/prod/mediation`, is the same shape by design:
+
+```json
+{"event":"authorization_refused","reason":"Not enough segments"}
+{"event":"question_answered","subject":"dana",
+ "groups":["all-staff","finance-team"],
+ "documents":["competitor-analysis.md","engineering-oncall.md",
+              "finance-q3-forecast.md","injection-attempt.md"],
+ "passages":4,"guardrail_intervened":false}
+```
+
+Who asked, which groups they held, which documents were returned, how many
+passages, whether the guardrail intervened. Not the question, not the answer.
+That is R5 in the risk assessment: the trail proves a call happened and what it
+was allowed to touch, never what was asked.
+
 ## Detections, and where they deliver
 ```
 [
