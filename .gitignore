@@ -59,3 +59,8 @@ event_history.json
 
 # Editor state: rope keeps its index inside the package it indexes
 .ropeproject/
+
+# Deck renders: Slides.md is the source, these are exports
+docs/deliverables/Slides.html
+docs/deliverables/Slides.pdf
+docs/deliverables/*.pptx
