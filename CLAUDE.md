@@ -983,6 +983,43 @@ tools — a tool allow-list, tool-denial detections, tool decision separated fro
 execution — is gone, since there are no tools. Render with
 `npx @marp-team/marp-cli@latest Slides.md --pdf --allow-local-files`.
 
+**The design summary fits five pages, measured.** 3,403 words rendered at seven;
+it is now 2,950 and renders at five, with a third of the last page spare.
+`docs/deliverables/render-pdf.sh` is the check — marked to HTML, Chrome headless
+to PDF at fixed typography (A4, 18mm, 10.5pt serif), then a page count; the
+risk assessment comes out at four. Rewording barely moved the number (250 words
+over two passes); deleting whole paragraphs of rationale moved 500 in one. What
+went: the "two lessons" moral, the drift-prevention paragraph, the SIEM product
+comparison, a separate retention paragraph, and three headed paragraphs in
+Operations folded into one. Exports are gitignored (`docs/deliverables/*.pdf`).
+
+**The deck was reconciled again on 2026-09-24.** The two gate slides showed
+`make k8s-demo` and `make policy-negative`, neither of which runs anywhere —
+they now quote `security.yml`'s real output, and three stale numbers went with
+them (the fixture is 65 violations, not 37 on the slide or 60 in the README; the
+`make demo` slide claimed "29 tests, 10 failures" against a policy that is now
+81 rules with 77 proven). Slide 2's right column was a metaphor with no point;
+it now lands on entitlement — *"even if it knows everything, it decides who is
+entitled to the answer"* — and the left column no longer claims the assistant
+"may invoke approved business APIs", since there are no tools. Control 2's table
+listed the guardrail above retrieval; it is five numbered steps in the order the
+service runs them, because the guardrail is server-side and cannot precede the
+Bedrock call. The "next steps" slide promised four items in 30 days, one of
+which needs 30 days of traffic before it can start — each now carries its own
+effort and earliest-done, and the Azure, model-governance and
+continuous-evaluation rows were dropped entirely on the user's instruction.
+**No document mentions Azure or multi-cloud any more.**
+
+**Diagram 1 is `flowchart LR`, and that is a slide constraint.** `TB` rendered
+1453x1381, which at `w:1020` is 969px tall on a 720px slide — the whole Security
+operations zone fell off the bottom of deck page 4. `LR` renders 2510x966 and
+fits at `w:1190`. `architecture-eli5.drawio` was deleted; it held the
+pre-deployment shape and could not be regenerated. The caption claiming "every
+box is a real resource in controls/terraform/ — the picture and the code cannot
+drift apart" was false twice over (the Employee is a person, the mediation
+service is a Kubernetes manifest, and nothing generates the diagram); both the
+slide and design-summary §2 now say what is actually true.
+
 **The design summary now answers all five §2.2 bullets.** Added on 2026-09-23:
 tool authorization and input/output validation in §3.2, environment separation
 in §3.3 (tfvars per environment, account per environment, workspaces explicitly
