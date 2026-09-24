@@ -80,11 +80,6 @@ docs/deliverables/    design summary, risk assessment, slides and the diagrams
 docs/evidence/        what the live account returned, and screenshots of the running service
 ```
 
-The two Terraform roots are split for a policy reason, not only an ownership
-one. Merged, the cluster's OIDC issuer URL is unknown at plan time, which makes
-the whole IRSA trust policy unknown, which makes the rule that checks it stop
-firing silently. A control that cannot see its input is not a control.
-
 ## 3. From zero to a live answer
 
 Roughly 30 minutes from an empty account, most of it waiting on EKS. Each step
@@ -115,13 +110,9 @@ gh workflow run infra-provision.yml
 gh run watch <run-id> --exit-status --interval 30
 ```
 
-One workflow, both layers, `eks-platform` then `bedrock-ai`, with the policy
-gate running *inside* the applying run rather than beside it — the rules read
-the saved plan immediately before it is applied, so the bytes the gate inspects
-are the bytes that run. Backend and tfvars are generated at run time, and the
-platform layer's outputs are read into the AI layer, so no value is hand-copied.
-
-A push to `main` touching `controls/terraform/**` triggers the same workflow.
+One workflow, both layers in order, with the policy gate running inside the
+applying run. A push to `main` touching `controls/terraform/**` triggers the
+same workflow.
 
 ### 3.3 The secret material — about 1 minute
 
@@ -129,12 +120,8 @@ A push to `main` touching `controls/terraform/**` triggers the same workflow.
 gh workflow run app-secrets.yml -f confirm=rotate
 ```
 
-The key that signs caller identity tokens and the TLS pair the pod presents on
-:8443, both generated **on the jump host** inside the VPC. They never exist on a
-runner, and Terraform never sees their values — there is deliberately no
-`aws_secretsmanager_secret_version` to put the plaintext into state.
-
-`confirm=rotate` is required; a bare dispatch fails with HTTP 422.
+The token signing key and the pod's TLS pair, generated on the jump host inside
+the VPC. `confirm=rotate` is required; a bare dispatch fails with HTTP 422.
 
 ### 3.4 The application — about 4 minutes
 
@@ -142,16 +129,11 @@ runner, and Terraform never sees their values — there is deliberately no
 gh workflow run app-release.yml
 ```
 
-Builds the image on a runner — the jump host has no route to the internet —
-then renders the manifests from applied state, runs the policy gate over the
-**rendered** output (substituting real identifiers is the step that could
-introduce a violation), stages them with a `kubectl` binary in the state bucket,
-and has the jump host apply them. The digest travels between the two halves;
-nothing refers to an image tag.
+Builds the image, renders the manifests from applied state, gates the rendered
+output, and has the jump host apply them.
 
-Must follow 3.3: the pod reads both secrets at startup with its own IRSA
-credentials, so deploying first crash-loops and the rollout fails on a timeout
-rather than on the real reason.
+Must follow 3.3: the pod reads both secrets at startup, so deploying first
+crash-loops and the rollout fails on a timeout rather than on the real reason.
 
 ### 3.5 The vector index — about 1 minute
 
@@ -159,14 +141,11 @@ rather than on the real reason.
 gh workflow run app-index.yml -f confirm=index
 ```
 
-Ingestion runs from the jump host, the only principal the OpenSearch data access
-policy grants writes to. The service can only read — which is what makes corpus
-poisoning by prompt injection impossible rather than merely unlikely: the
-identity running the injection has no write permission to use.
-
-`confirm=index` is required because the run passes `--recreate`, which **drops
-the index before rebuilding it**. Expect `indexed 16 passages from 6 documents`,
-then allow a minute — Serverless returns `sources: []` until the index settles.
+Ingestion runs from the jump host, the only principal allowed to write the
+index. `confirm=index` is required because the run passes `--recreate`, which
+**drops the index before rebuilding it**. Expect `indexed 16 passages from 6
+documents`, then allow a minute — Serverless returns `sources: []` until the
+index settles.
 
 ### 3.6 Reaching the front end — about 5 minutes
 
@@ -262,13 +241,10 @@ What each comes back with, captured against the live account:
 retrievable, visible in the Sources line, rather than in what the model was told
 to say. The document was not filtered out of the prose; it was never read.
 
-Row 5 must show `guardrail_intervened: true`. A polite refusal from the model
-looks identical on screen and is not a control — the central finding of the
-design summary is that the same guardrail, attached and configured, scanned
-nothing at all under `InvokeModel` while the model's own refusal did the work.
-**The badge reads "guardrail intervened" on rows 4 and 5 alike**, since an
-anonymisation counts as an intervention, so the badge does not separate a masked
-answer from a blocked one. The answer body does.
+Row 5 must show `guardrail_intervened: true` — a polite refusal from the model
+looks identical on screen and is not a control. The badge reads "guardrail
+intervened" on rows 4 and 5 alike, since an anonymisation counts as one, so read
+the answer body rather than the badge.
 
 A sixth is worth asking if there is time — anything outside the corpus, for
 example *Who is leading the F1 world championship?* The service says the
@@ -310,9 +286,7 @@ metric filter and CloudWatch.
 ![the guardrail-interventions alarm in ALARM in the CloudWatch console](docs/evidence/screenshots/06-guardrail-alarm-in-alarm.png)
 
 `bedrock-access-denied` reads `OK` because CloudTrail is always writing;
-`authorization-refusals` reads `Insufficient data` because a metric filter emits
-its zero only when a log event arrives and fails to match, so a quiet log group
-produces no datapoints at all.
+`authorization-refusals` reads `Insufficient data` until a token is refused.
 
 ```bash
 aws cloudwatch describe-alarms --alarm-names genai-assistant-prod-guardrail-interventions \
@@ -324,10 +298,9 @@ aws sqs receive-message --queue-url "$QUEUE" --wait-time-seconds 20 \
   --query 'Messages[].Body' --output text | jq -r '.Message | fromjson'
 ```
 
-The topic delivers to an email address and an SQS queue. The queue is the path
-to show: it self-confirms, and `receive-message` printing the alarm JSON proves
-the notification was produced, routed and delivered, where an inbox only shows
-that nothing arrived.
+The topic delivers to an email address and an SQS queue. Show the queue: it
+self-confirms, and the alarm JSON coming back off it proves delivery where an
+inbox cannot.
 
 Account-level evidence — cluster, VPC isolation, endpoints, trail, alarms and
 subscriptions, read off the running stack — is in
@@ -352,19 +325,7 @@ it accepts good input. All of it runs in the pipeline.
 | Somebody else's scanner agrees | Trivy over `controls/`, advisory | `security.yml`, third-party scan |
 
 The `security gate` job requires every one of those, so none can be skipped by
-renaming a file. No job in that workflow authenticates to AWS: `terraform plan`
-renders the graph with mock credentials and the policy engine reads that graph
-as a file, so the whole gate chain runs on untrusted input with nothing to
-steal.
-
-The coverage gate is the one worth explaining. A rule that has never rejected
-anything has not been tested, and a Rego rule that inspects the wrong path
-passes silently forever, so the coverage step walks every `deny` and fails the
-build unless that rule's message appears in a negative fixture's output. Four
-rules are exempt — each the "present but misconfigured" half of a pair whose
-other half is "absent entirely", which one plan cannot trigger at once — and the
-exemption is checked in reverse: if an exempt rule ever fires, the build fails
-as stale.
+renaming a file, and no job in that workflow authenticates to AWS.
 
 ## 6. Assumptions
 
