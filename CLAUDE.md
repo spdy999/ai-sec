@@ -724,8 +724,10 @@ Bedrock → CloudWatch invocation-logging arrow, SIEM drawn as a component, and
 the jump host as its own operator zone (the only writer), `Converse` with the
 reason stated, CloudTrail, and the three-alarm → SNS → SQS chain. Three renders
 — `architecture-overview.png`, `request-path.png`, `identity-permissions.png`;
-the old `-tall.png` is deleted. `architecture-eli5.drawio` is still the
-pre-deployment shape and cannot be regenerated from source.
+the old `-tall.png` is deleted, and `architecture-eli5.drawio` was removed on
+2026-09-24: it still held the pre-deployment shape and could not be regenerated.
+Diagram 1 is `flowchart LR` so the render fits a 16:9 slide -- `flowchart TB`
+produced a near-square image that overflowed the deck.
 
 Render mermaid with Chrome, which Puppeteer does not bundle here:
 
