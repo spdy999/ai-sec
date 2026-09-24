@@ -64,3 +64,6 @@ event_history.json
 docs/deliverables/Slides.html
 docs/deliverables/*.pdf
 docs/deliverables/*.pptx
+
+# Speaking notes: local only, never part of the submission
+docs/deliverables/presentation-script.md
