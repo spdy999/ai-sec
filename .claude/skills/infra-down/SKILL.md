@@ -3,7 +3,7 @@ name: infra-down
 description: Destroy the whole platform on AWS — both Terraform layers and everything in them — then prove the account is empty. Use only when the user says tear it down, destroy it, or bring it down, in that moment.
 ---
 
-The teardown from [RUNBOOK §7b](../../../docs/RUNBOOK.md#7b-teardown). Roughly
+The teardown from [README 3.7](../../../README.md#37-teardown). Roughly
 5 minutes. Reversed by `/infra-up`, in 25-30.
 
 > **Warning: this is irreversible and destroys live infrastructure.** It

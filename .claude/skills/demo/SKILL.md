@@ -7,9 +7,9 @@ The full story in one run: **the gates refuse bad config**, then **the live
 service answers differently for two identities and blocks an injection**, then
 **a detection notices and delivers a message**.
 
-Read the runbook's [Demo walkthrough](../../../docs/RUNBOOK.md#5-demo-walkthrough)
-and [Reaching the live platform](../../../docs/RUNBOOK.md#4-reaching-the-live-platform)
-for the underlying mechanics. This skill is
+Read [README section 4](../../../README.md#4-testing-the-prompts) and
+[3.6](../../../README.md#36-reaching-the-front-end--about-5-minutes) for the
+underlying mechanics. This skill is
 the sequence, the preflight that stops it wasting a rehearsal, and the cleanup.
 
 ## Arguments

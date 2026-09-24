@@ -75,7 +75,6 @@ controls/kubernetes/  base manifests, Kyverno policies, and manifests that must 
 controls/data/corpus/ six synthetic markdown documents, uploaded by the AI layer
 app/                  the only custom code: the mediation service and its React front-end
 .github/workflows/    the gate chain, the infrastructure workflows and the application workflows
-docs/RUNBOOK.md       operational detail: every command, and what to do when it breaks
 docs/deliverables/    design summary, risk assessment, slides and the diagrams
 docs/evidence/        what the live account returned, and screenshots of the running service
 ```
@@ -112,7 +111,10 @@ gh run watch <run-id> --exit-status --interval 30
 
 One workflow, both layers in order, with the policy gate running inside the
 applying run. A push to `main` touching `controls/terraform/**` triggers the
-same workflow.
+same workflow. To repair one layer once it exists, `infra-eks-platform.yml` and
+`infra-bedrock-ai.yml` take `-f action=apply|destroy`; every terraform command
+lives in `tf-reusable-workflow.yaml`, which all four callers share, so none can
+supply its own invocation or skip the gate chain.
 
 ### 3.3 The secret material — about 1 minute
 
@@ -197,22 +199,52 @@ kubectl ... port-forward deploy/genai-mediation 8443:8443
 ```
 
 Front end at `https://127.0.0.1:8443/`, self-signed — the browser warning is
-expected. Paste a token into the identity field and ask. A deploy replaces the
-pods and silently kills the port-forward; restart it rather than debugging an
-empty response.
+expected. Paste a token into the identity field and ask.
+
+Three things that waste time otherwise: a deploy replaces the pods and silently
+kills the port-forward, so restart it rather than debugging an empty response; a
+plain shell on the jump host is `aws ssm start-session --target <instance-id>`
+with no document name, which is how to read a failed Run Command; and never
+point `kubectl` at a context you have not named explicitly, because the
+current-context on a work machine is usually a real work cluster.
 
 ### 3.7 Teardown
 
 Not a habit — the stack is designed to be left up between sessions.
-[Teardown and rebuild](docs/RUNBOOK.md#7-teardown-and-rebuild) covers what
-survives, how to confirm the account is empty, and the rebuild chain.
 
 ```bash
+gh run list --limit 5                 # nothing in_progress before starting
 gh workflow run infra-destroy.yml -f confirm=destroy
+gh run watch <run-id> --exit-status --interval 20
 ```
 
-`pipeline-iam` is never part of a teardown: the state bucket, its CMK and the
-deploy role survive, because the next deployment needs them.
+Both layers and everything in them go: cluster, nodes, VPC, endpoints, jump
+host, guardrail, collection, secrets, corpus bucket, registry, trail. The
+destroy runs no gate chain — the typed `confirm=destroy` is the only guard — and
+**must not be cancelled mid-terraform**, which leaves the state lock held.
+
+What survives, because a rebuild needs it: the `pipeline-iam` root (the OIDC
+provider and the deploy role, never dispatched), the Terraform state bucket and
+its CMK, the repository variables and the `production` environment, and the
+`eu-south-1` / `eu-south-2` opt-ins. `ephemeral_environment = true` deletes the
+secrets with a zero recovery window, so both names are reusable immediately.
+
+Confirm it is gone rather than trusting a green run:
+
+```bash
+aws eks list-clusters
+aws opensearchserverless list-collections
+aws bedrock list-guardrails --query 'guardrails[].name'
+aws secretsmanager list-secrets --query 'SecretList[].Name'
+```
+
+To rebuild, run 3.2 to 3.5 again in that order — about 25 minutes, plus the five
+manual ones in 3.6. Three things bite on a rebuild: every identifier changes, so
+never hand-edit the ConfigMap (`render.sh` substitutes them from applied state);
+the guardrail version goes back to `1`; and the SNS email subscription is issued
+unconfirmed again, so an alert arrives only after someone clicks the link —
+`list-subscriptions-by-topic` showing `PendingConfirmation` is an alarm nobody
+receives, which is why the SQS queue is the path the demo checks.
 
 ## 4. Testing the prompts
 
@@ -418,11 +450,25 @@ Stated because they bound what the implementation can claim.
 
 ## 8. When it breaks
 
-The runbook's [troubleshooting table](docs/RUNBOOK.md#6-troubleshooting) covers
-the OIDC subject mismatch, held state locks, `for_each` over values unknown at
-plan time, the coverage gate refusing a new rule, and the jump host failures
-that look like slowness rather than denial. `CLAUDE.md` carries the longer
-findings, each written down the first time it cost an hour.
+| Symptom | Cause | Fix |
+|---|---|---|
+| `infra-provision.yml` fails at `configure-aws-credentials` with `Not authorized to perform sts:AssumeRoleWithWebIdentity` | the job's OIDC subject doesn't match the role's trust policy | the job must declare `environment: production`; the trust policy pins the environment, not the branch, and accepts both the legacy and the ID-qualified subject |
+| An apply fails with the state lock already held | a previous run was cancelled mid-apply | `terraform force-unlock <id>` against the same backend, after confirming no run is live; the workflows set `cancel-in-progress: false` to stop this happening |
+| `tf-wire.sh` exits with `eks-platform state holds no outputs` | the AI layer was dispatched against an empty or wrong state | apply the platform layer first, and check `TF_STATE_BUCKET` names the state bucket |
+| The AI layer fails on `cloudwatch:PutMetricAlarm` or `sqs:CreateQueue` | `pipeline-iam` is behind; it is applied by hand and a push does not pick it up | apply `pipeline-iam` from a workstation, then re-run the provision |
+| A rule checking a cross-resource attribute false-positives | the attribute is unresolved at plan time, sitting in `resource_changes[].change.after_unknown`, not `planned_values` | use `lib.unknown_at(address, path)` in the rule |
+| `Invalid for_each argument` after adding a client or an admin principal | the value is a security group ID or role ARN, unknown until apply, used as a `for_each` **key** | pass a `map(string)` keyed by a static name (`nodes`, `bastion`), never `toset()` of the unknowns |
+| A new rule passes the policy gate but the run still fails | the coverage step requires every rule to fire against a fixture at least once | extend a fixture so the rule's message appears in negative output, or add it to the four-rule exemption list in `controls/policy/coverage.py` with a reason |
+| An exempt rule shows up in coverage output | one of the "present but misconfigured" halves in `coverage.py` actually fired | remove it from the exemption list — the gate treats this as stale and fails |
+| `aws ssm start-session` hangs or says the target is not connected | the SSM agent has no route: an endpoint missing, or the jump host security group has no egress to it | check the `ssm`, `ssmmessages` and `ec2messages` endpoints exist and `bastion_to_endpoints` allows 443 |
+| An AWS call from the jump host hangs with empty stderr, then `Connect timeout on endpoint URL` | a route is not a permission: the gateway or interface endpoint exists but the security group has no egress to the S3 prefix list or the endpoint group | add the egress rule; the same class of failure left nodes `NotReady` with no health issue reported |
+| A deploy times out with `timed out waiting for the condition` | the pod cannot reach a secret or the CMK; a rollout during a policy change is denied under the old one | the workflow prints pods, events and logs from the jump host session — read those, then retry once the policy has landed |
+| The first question after an index run answers with `sources: []` | OpenSearch Serverless needs about a minute to settle after `--recreate` | wait and ask again |
+| A corpus edit produced a green index run and the new content is absent | the ingester reads the documents from S3 and Terraform uploads them | run `infra-provision.yml`, then `app-index.yml -f confirm=index` |
+| Merging the two Terraform roots "to simplify" | the OIDC issuer URL becomes unknown at plan time in a single root, which makes the IRSA trust policy unknown, which makes its rule stop firing — silently | don't merge them; that split is a policy requirement, not an ownership one |
+
+`CLAUDE.md` carries the longer findings, each written down the first time it
+cost an hour.
 
 ## Note
 

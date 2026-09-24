@@ -3,7 +3,7 @@ name: infra-up
 description: Bring the whole platform up on AWS from empty — both Terraform layers, then secrets, image, manifests and the vector index, each waited green. Use when the user says bring it up, rebuild, provision, spin it up, or asks for the stack back after a teardown.
 ---
 
-The rebuild chain from [RUNBOOK §7c](../../../docs/RUNBOOK.md#7c-rebuild-in-order),
+The rebuild chain from [README section 3](../../../README.md#3-from-zero-to-a-live-answer),
 driven end to end. Roughly 25-30 minutes of workflow runs, plus five manual
 minutes at the end.
 
@@ -143,7 +143,7 @@ aws-vault exec spdy999 --no-session -- aws eks update-kubeconfig \
 
 Say what is up, what it costs per day, and what is left by hand: the two
 Session Manager hops, the tokens minted in the pod, the port-forward. Those are
-in [RUNBOOK §4](../../../docs/RUNBOOK.md#4-reaching-the-live-platform), and
+in [README 3.6](../../../README.md#36-reaching-the-front-end--about-5-minutes), and
 `/demo` drives them.
 
 Then hand over: **the stack is now billing and stays up until the user says

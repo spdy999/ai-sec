@@ -102,12 +102,12 @@ app/                  the only custom code: mediation service (FastAPI) and its
                       between them, and is the only app workflow a push
                       triggers; app-tokens.yml mints demo tokens (see below)
 .github/scripts/      backend + tfvars generation and cross-root wiring for deploy
-docs/RUNBOOK.md       operational how-to: prereqs, offline loop, live cluster,
-                      real AWS apply/destroy order, demo, troubleshooting
+docs/deliverables/    design summary, risk assessment, slides, diagrams
+docs/evidence/        live account capture and front-end screenshots
 .claude/skills/ship/  repo-local skill: make ci, commit, push, watch the run
 .claude/skills/demo/  repo-local skill: the presentation walkthrough -- gates, live
                       front end, then a guardrail alarm firing into the alert queue
-.claude/skills/infra-up/    repo-local skill: the whole rebuild chain, RUNBOOK 7c --
+.claude/skills/infra-up/    repo-local skill: the whole rebuild chain, README 3 --
                       infra-provision, app-secrets, app-release, app-index, each
                       waited green, then the verification and the kubeconfig regen
 .claude/skills/infra-down/  repo-local skill: infra-destroy plus the emptiness
@@ -509,9 +509,13 @@ cluster that job creates and throws away.
 Controls 1 and 2 are complete and validated in both directions. Control 3 ran
 for the first time on 2026-09-21 and is green — it failed twice first, on a
 missing `terraform init` before `validate` and on a trivy-action tag that does
-not exist (upstream tags are `v`-prefixed). `docs/RUNBOOK.md` is operational
-(what to type, in what order); README stays the reviewer-facing what/why/proof
-doc — don't duplicate content between them.
+not exist (upstream tags are `v`-prefixed). **`docs/RUNBOOK.md` was deleted on
+2026-09-24** — roughly half of it repeated the README and the user rejected the
+redundancy outright: *"i dont want to have runbook anymore."* Its unique
+content moved into the README: the troubleshooting table is section 8, teardown
+and rebuild is 3.7, the single-layer repair dispatches are 3.2, and the jump
+host shell plus the current-context warning are 3.6. There is now one document
+for a reviewer and one for an operator, and they are the same document.
 
 **Both documents present the AWS path and nothing else**, rewritten 2026-09-24:
 *"remove all local tools out from all document, now we are going to use only in
@@ -740,7 +744,7 @@ A semicolon inside a `note over` breaks a sequence diagram — mermaid treats it
 as a statement separator, and the parse error points at the line without saying
 why.
 
-**Teardown and rebuild is written down** — RUNBOOK section 7: what survives a
+**Teardown and rebuild is written down** — README 3.7: what survives a
 destroy, the emptiness check, the rebuild chain `infra-provision` →
 `app-secrets` → `app-release` → `app-index` with the reason for each wait, and
 the manual five minutes. Roughly 5 minutes down, 25-30 back up, plus 5 by hand.
