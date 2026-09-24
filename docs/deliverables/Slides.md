@@ -305,20 +305,19 @@ runtime behaviour. Say that before being asked.
 
 # Control 2 — what the checkpoint does
 
-Every request passes six decision points before an answer is returned.
+Every request passes five decision points, **in this order**.
 
-| Stage | Check | On failure |
+| # | Check | On failure |
 |---|---|---|
-| Input | Signed token, group claims | Reject, event recorded |
-| Input | Typed, length-bounded question | Reject |
-| Input | Guardrail: prompt attack, denied topics | Server-side block |
-| Retrieval | Audience label vs. group claims | Never a candidate |
-| Model | `Converse`, guardrail version pinned | IAM refuses an unguarded call |
-| Output | Guardrail PII: anonymise email, phone, employee ID; block card numbers | Masked in the answer |
+| 1 | Signed token, group claims | Reject 401, event recorded |
+| 2 | Typed, length-bounded question | Reject 422 |
+| 3 | Search filtered on `allowed_groups` | The document is never a candidate |
+| 4 | `Converse` — guardrail on the **question**: prompt attack, denied topics | Server-side block; IAM refuses an unguarded call |
+| 5 | Guardrail on the **response**: anonymise email, phone, employee ID; block card numbers | Masked, or the answer is withheld |
 
 <br>
 
-<span class="muted">Retrieved text is inserted as <strong>data</strong>, never as instructions — the structural answer to injection.</span>
+<span class="muted">The guardrail is server-side, so it cannot run before Bedrock is called — retrieval is filtered first, which is why step 3 precedes step 4.</span>
 
 ---
 
