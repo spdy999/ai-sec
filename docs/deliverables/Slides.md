@@ -321,6 +321,40 @@ Every request passes six decision points before an answer is returned.
 
 ---
 
+# The entitlement map
+
+Each document carries one `Audience:` line. Ingestion copies it onto every
+passage as `allowed_groups`; the search filters on it.
+
+| Document | Audience | alice | dana |
+|---|---|:--:|:--:|
+| `hr-leave-policy.md` | all-staff | ✅ | ✅ |
+| `engineering-oncall.md` | all-staff | ✅ | ✅ |
+| `competitor-analysis.md` | all-staff | ✅ | ✅ |
+| `injection-attempt.md` | all-staff | ✅ | ✅ |
+| `finance-q3-forecast.md` | finance-team | — | ✅ |
+| `customer-records.md` | support-team | — | — |
+
+<span class="muted">alice holds <code>all-staff</code>, dana <code>finance-team</code> — and every caller gets <code>all-staff</code> implicitly.</span>
+
+<!--
+Three groups, six documents, and the whole of authorisation is the intersection
+of two lists. The token's groups go into the OpenSearch query as a terms filter
+on allowed_groups, so a document the caller may not read is not a low-ranked
+result — it is not a result.
+
+Nobody in the demo holds support-team, which is why customer-records.md is
+unreachable for both identities. That is deliberate: it is the document the
+denied-topic policy covers instead, so the request is refused at the guardrail
+whether or not the document was ever retrievable.
+
+The honest gap: there is no group registry. These are strings that have to
+match on both sides, and a typo silently returns nothing. In production both
+sides come from the IdP and the document source system.
+-->
+
+---
+
 <!-- _class: demo -->
 
 # Live: same question, two identities, then hostile
