@@ -94,6 +94,9 @@ AWS Bedrock · Amazon EKS · Policy-as-code
 
 <br>
 
+**Submitted with this deck:** architecture diagram · security design summary
+(5 pages) · risk assessment, top 5 (4 pages)
+
 *Candidate submission — confidential*
 
 <!--
@@ -182,6 +185,11 @@ Walk the numbered flow: authenticate, token, mediation layer, filtered
 retrieval, model invocation with guardrail, answer with the guardrail applied
 to the response.
 
+The EKS API server is private with no public endpoint, which is why a GitHub
+runner cannot deploy here — the jump host applies the manifests over Session
+Manager. That arrow is what makes "the jump host is the only writer" visible
+rather than asserted: it writes the corpus, the secrets and the workload.
+
 Point out the absence: there is no NAT gateway. The data zone has no route to
 the internet, so exfiltration has no network path.
 -->
@@ -224,8 +232,9 @@ Risk 1 residual is deliberately marked High. Anyone claiming prompt injection
 is fully mitigated is overselling. The honest position is layered defence plus
 detection, and an assumption of eventual bypass.
 
-These are the five in risk-assessment.md, each with component, business impact
-and actions. Risk 4's detective cell is empty on purpose — that gap is named
+Say out loud that this table is one page of the four-page risk assessment they
+already have, and that each risk there carries component, business impact,
+detection and actions. Risk 4's detective cell is empty on purpose — that gap is named
 rather than papered over.
 -->
 

@@ -21,6 +21,7 @@ flowchart LR
     end
 
     subgraph platform["☸️ Platform zone — EKS, private subnets, no internet egress"]
+        api["EKS API server<br/><i>private endpoint, no public access</i>"]
         proxy["<b>Mediation service</b><br/><i>FastAPI on EKS, IRSA</i><br/>validates the token · filters retrieval<br/>by group · records telemetry"]
     end
 
@@ -49,6 +50,9 @@ flowchart LR
     proxy -->|"startup"| secrets
     proxy -->|"refusals, interventions"| telemetry
 
+    bastion -->|"kubectl apply over SSM"| api
+    api --> proxy
+
     bastion --> vectors
     bastion --> docs
     bastion --> secrets
@@ -67,6 +71,7 @@ flowchart LR
     class vectors,docs,bedrock,secrets store
     class telemetry,trail,alarms,sns,queue sec
     class bastion ops
+    class api control
 ```
 
 **Why the shape is this shape**
