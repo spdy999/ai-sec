@@ -190,6 +190,14 @@ zero and an egress rule silently did not exist. The gate chain now runs *inside*
 the applying run (`run_gate` left at its default) — `security.yml` runs in
 parallel on the same commit and so could never have refused one.
 
+**A path filter reads the push's net diff, not each commit.** On 2026-09-24 a
+commit that changed the alerting module and a revert of it went up in the same
+push: `git diff 681d28e..b8fed14` listed zero files under `controls/terraform/`,
+so `infra-provision.yml` never triggered and only `security.yml` ran. The
+account was therefore never changed — which is the right outcome here, and a
+trap the other way round, since a change reverted later in the same push also
+applies nothing while both commits sit in the history looking like it did.
+
 **A cleanup step that interpolates an unset variable deletes everything.** The
 `clean up the staging prefix` steps run `if: always()`, so a failure before the
 staging step left the prefix empty and the command became `aws s3 rm --recursive
@@ -638,6 +646,23 @@ Primary: Rafael Ortiz - Employee ID: {employee-id} - Email: {EMAIL} - Phone: {PH
 with `guardrail_intervened: true`. **An anonymisation is an intervention**, so
 that flag does not separate a masked answer from a blocked one — only the body
 does. The name is not masked; only the entities the guardrail names are.
+
+**Token forgery was proven refused on 2026-09-24, live.** The user asked whether
+a caller could add `finance-team` to alice's own token. Editing the payload and
+keeping the signature gives `HTTP 401 {"detail":"Signature verification
+failed"}` — `identity.py` verifies HS256, issuer and expiry and requires `exp`,
+`sub`, `iss` before reading a claim. The same question with the real token
+answers "I do not find a Q3 revenue forecast in the passages provided" with
+`sources: ['competitor-analysis.md', 'engineering-oncall.md',
+'injection-attempt.md']` — the finance document absent from the list rather than
+filtered out of the prose. Worth rerunning rather than asserting: the real
+weakness is that a bearer token is whoever holds it, not that it can be forged.
+
+**The deck has an entitlement map slide** (slide 12, before the Live slide):
+six documents, their `Audience:`, and what alice and dana each see. Three groups
+exist — `all-staff`, `finance-team`, `support-team` — and nobody in the demo
+holds `support-team`, which is why `customer-records.md` is unreachable for both
+identities and the denied topic covers it instead.
 
 **A corpus edit alone silently indexes the previous corpus.** `app-index.yml`
 triggers on `controls/data/corpus/**`, but the ingester reads the documents from
