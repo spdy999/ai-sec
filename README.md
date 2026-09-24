@@ -419,6 +419,13 @@ Stated because they bound what the implementation can claim.
 - **The guardrail runs on the default content-filter tier.** Bedrock offers
   Classic and Standard; the Terraform does not set it, so the deployed guardrail
   is on Classic by default rather than by decision.
+- **The guardrail scans the question, not the passages.** Retrieved documents
+  stay outside the `guardContent` block on purpose — scanning them would block
+  the corpus rather than the caller — so an injection planted in a document
+  (`injection-attempt.md` is one) reaches the model unscanned. The model
+  declines it because the system prompt names passages as quoted data, which is
+  a soft control; the hard one is that retrieval already filtered to the
+  caller's groups, so the injection can only reach what they could read anyway.
 - **Masking covers the entities that were named.** EMAIL, PHONE and the `KOE-`
   employee-id regex are anonymised; a card number blocks the response outright.
   A personal name comes back in clear.

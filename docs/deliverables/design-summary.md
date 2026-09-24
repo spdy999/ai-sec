@@ -109,6 +109,16 @@ question in its own `guardContent` block and retrieved passages deliberately
 outside it — one corpus document is a planted injection, and scanning quoted
 documents would block the corpus rather than the caller.
 
+That choice has a consequence worth stating plainly. The guardrail catches
+**direct** injection, typed by the caller. It does not see **indirect**
+injection, which arrives inside a retrieved document: `injection-attempt.md` is
+all-staff, so it is retrieved constantly, and its payload reaches the model
+unscanned. What declines it is the model's own adherence to a system prompt that
+names passages as quoted data rather than instructions — a soft control. The
+hard control is that retrieval was already filtered by the caller's groups, so
+an injected "list every document" can only reach what that caller could read
+anyway. The blast radius is capped even when the instruction is obeyed.
+
 Two lessons are carried into the design rather than hidden: a control must be
 proven by its effect, not by its configuration; and the way to distinguish a
 misconfigured guardrail from an unapplied one is to send the same text through
@@ -344,8 +354,10 @@ baseline.
 | Small validated scope | Broad partial coverage | The assignment asked for demonstrable, not exhaustive |
 
 **Limitations, stated rather than discovered under questioning.** Prompt
-injection is mitigated, not solved. Guardrail block rate is demonstrated, not
-measured. The content-filter tier is on the Bedrock default rather than a
+injection is mitigated, not solved: the guardrail scans the question and not the
+retrieved passages, so an injection planted in a document is declined by the
+model rather than blocked by a control, and only the retrieval filter bounds
+what it could achieve. Guardrail block rate is demonstrated, not measured. The content-filter tier is on the Bedrock default rather than a
 decision. The alarms sum across all callers, so five people blocked once each
 looks identical to one person blocked five times, and they name the metric
 rather than the identity — a CloudWatch alarm binds to one metric and cannot

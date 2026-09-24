@@ -497,6 +497,7 @@ carries, plus a typed confirm=destroy on the teardown.
 | Limitation | Why |
 |---|---|
 | Prompt injection is mitigated, not solved | No reliable separation of instruction from content exists today |
+| The guardrail scans the question, not the passages | An injection planted in a document is declined by the model, not blocked; the retrieval filter caps what it can reach |
 | Block rate demonstrated, not measured | The evaluation harness is designed; there was no minute for it |
 | **Alarms name the metric, not the identity** | An alarm binds to one metric; per-user needs Contributor Insights |
 | Thresholds chosen, not baselined | Real numbers need production traffic |

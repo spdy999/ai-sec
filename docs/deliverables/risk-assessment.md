@@ -51,11 +51,16 @@ this risk describes is detectable only by that pair disagreeing with what the
 user sees: a refusal with no intervention recorded is the model being polite,
 not a control firing.
 
-**Residual.** Block rate is demonstrated, not measured: there is no test harness
-running an injection corpus through `ApplyGuardrail` and tracking the rate over
-time, so a regression would show up as an answered injection in production. The
-guardrail is also on the Classic content-filter tier by default rather than by
-decision.
+**Residual.** The guardrail scans the question and not the passages, so an
+injection planted in a retrieved document — `injection-attempt.md` in the corpus
+is exactly that — is never inspected. It is declined by the model's adherence to
+a system prompt naming passages as quoted data, which is a soft control, and
+bounded by the retrieval filter, which is a hard one: the injection can only
+reach documents the caller was already entitled to. Beyond that, block rate is
+demonstrated, not measured: there is no harness running an injection corpus
+through `ApplyGuardrail` over time, so a regression would surface as an answered
+injection in production. The guardrail is also on the Classic content-filter
+tier by default rather than by decision.
 
 **Actions.** (1) Build the `ApplyGuardrail` evaluation harness and gate releases
 on it. (2) Assert `guardrail_intervened` in an end-to-end test, not only in the
