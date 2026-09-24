@@ -316,15 +316,19 @@ inherits CloudTrail's five-to-fifteen-minute delivery, so it starts an
 investigation rather than a response. The design is single-region, and the Azure
 equivalent is mapped but not implemented.
 
-**First thirty days.** Build the `ApplyGuardrail` evaluation harness and gate
-releases on measured block rate. Make the detections name the attacker: an
-EventBridge rule on the telemetry event, which carries the subject, so the
-notification identifies the identity and can revoke that one token rather than
-paging a human to go and look. Baseline the thresholds against real traffic and
-add a per-identity query-volume alarm — a slow scripted extraction is the case
-none of the deployed alarms sees. Scan the corpus at ingestion for embedded
-instructions, and refuse a document with no audience label. Replace the deploy
-role's remaining service wildcards with the actions a successful apply used.
+**What comes next, with the time each actually takes.** About a week: make the
+detections name the attacker — an EventBridge rule on the telemetry event, which
+carries the subject, so the notification identifies the identity and can revoke
+that one token rather than paging a human to go and look. About three days: scan
+the corpus at ingestion for embedded instructions and refuse a document with no
+audience label; and about the same to replace the deploy role's remaining
+service wildcards with the actions a successful apply used. About two weeks:
+build the `ApplyGuardrail` evaluation harness and gate releases on measured block
+rate. Then a per-identity query-volume alarm, two days' work, because a slow
+scripted extraction is the case none of the deployed alarms sees. Baselining the
+thresholds is last and cannot be hurried: it needs roughly thirty days of real
+traffic before the numbers mean anything. The Azure port, formal model
+governance and continuous evaluation are a quarter each, not a sprint.
 
 The five risks that drive that ordering — with prevention, detection and
 residual for each — are in `risk-assessment.md`.

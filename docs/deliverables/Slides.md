@@ -525,21 +525,20 @@ who has run these systems and someone who has read about them.
 
 # What I would do next
 
-**First 30 days**
-1. Red-team the guardrail with a published injection corpus, gate releases on
-   the measured block rate
-2. Make the detections name the attacker — EventBridge on the telemetry event,
-   which carries the subject, so one identity can be revoked rather than mailed
-   about
-3. Baseline the thresholds on real traffic, and add per-identity query volume:
-   a slow scripted extraction is what none of the three alarms sees
-4. Scan the corpus at ingestion for embedded instructions; refuse a document
-   with no audience label
+| Work | Effort | Earliest done |
+|---|---|---|
+| Detections that name the attacker — EventBridge on the telemetry event, which carries the subject, so one identity is revoked rather than mailed about | ~1 week | week 1 |
+| Scan the corpus at ingestion for embedded instructions; refuse a document with no audience label | ~3 days | week 2 |
+| Red-team the guardrail against a published injection corpus, gate releases on the measured block rate | ~2 weeks | week 4 |
+| Per-identity query-volume alarm — a slow scripted extraction is what none of the three alarms sees | ~2 days | week 5 |
+| Baseline the thresholds | 30 days of traffic first | week 9 |
+| Azure AI Foundry port, model governance, continuous evaluation | a quarter each | next quarter |
 
-**Beyond**
-5. Port the control set to Azure AI Foundry for the multi-cloud requirement
-6. Formal model governance: approval, versioning, deprecation
-7. Continuous evaluation — quality and safety regression tests in the pipeline
+<!--
+The middle column is effort, the right one is when it could be finished given
+what has to happen first. Thresholds are last on purpose: they need traffic to
+baseline against, and no amount of engineering shortens that wait.
+-->
 
 ---
 
