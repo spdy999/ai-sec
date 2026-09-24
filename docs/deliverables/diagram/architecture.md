@@ -227,8 +227,9 @@ Drawn nowhere above, because the account does not contain them:
   the pod, so the authorisation logic is real and the identity source is not.
 - **WAF and API Gateway.** There is no public entry point at all; the front end
   is reached through Session Manager and a port-forward.
-- **SIEM.** The seam is an `aws_cloudwatch_log_subscription_filter` on both log
-  groups, gated on an empty destination ARN. Nothing subscribes today.
+- **SIEM.** Both streams are CloudWatch log groups, so the seam is a
+  subscription filter to Firehose or a cross-account destination. Neither the
+  filter nor a destination is written; nothing subscribes today.
 - **Tools.** The assistant calls none. It retrieves and it answers.
 
 ## Assumptions

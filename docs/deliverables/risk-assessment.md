@@ -234,7 +234,8 @@ called, when, under which identity, and whether the guardrail intervened — but
 not what was asked.
 
 **Controls now in place.** Structured security events from the mediation service
-to a log group the SIEM subscribes to; CloudTrail data events on the guardrail;
+to their own CloudWatch log group, which is the export seam for a SIEM rather
+than a stream anything subscribes to today; CloudTrail data events on the guardrail;
 telemetry that fails open so a logging outage never becomes an application
 outage.
 

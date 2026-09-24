@@ -125,7 +125,7 @@ def _ensure_stream() -> bool:
 
 
 def log_event(event: dict) -> None:
-    """One security event to the log group the SIEM subscribes to."""
+    """One security event to the telemetry log group — the seam a SIEM would read."""
     if not _ensure_stream():
         return
 

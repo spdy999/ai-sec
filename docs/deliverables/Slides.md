@@ -89,7 +89,7 @@ style: |
 
 ## AI Security Engineer — Take-Home Assignment
 
-**Design + three implemented controls**
+**Design + four implemented controls**
 AWS Bedrock · Amazon EKS · Policy-as-code
 
 <br>
@@ -98,8 +98,9 @@ AWS Bedrock · Amazon EKS · Policy-as-code
 
 <!--
 Timing target: 15 minutes presentation, 15 minutes discussion.
-Three live demos. Everything runs locally; nothing depends on network access
-during the presentation except the Bedrock guardrail call.
+Four controls, shown in three live demos: the policy gate, the guardrail and
+mediation layer, the cluster and network controls, and detection. The gate runs
+offline; the rest is the deployed account.
 -->
 
 ---
