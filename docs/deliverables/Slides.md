@@ -502,7 +502,7 @@ carries, plus a typed confirm=destroy on the teardown.
 | **Alarms name the metric, not the identity** | An alarm binds to one metric; per-user needs Contributor Insights |
 | Thresholds chosen, not baselined | Real numbers need production traffic |
 | Content-filter tier left on the Bedrock default | A default rather than a decision |
-| Single-region; Azure mapped, not implemented | Residency and failover not addressed |
+| Single-region, single-cloud | Failover is not addressed, and nothing here is built on Azure |
 
 <!--
 Volunteering limitations is deliberate. It is the difference between someone
@@ -532,7 +532,6 @@ who has run these systems and someone who has read about them.
 | Red-team the guardrail against a published injection corpus, gate releases on the measured block rate | ~2 weeks | week 4 |
 | Per-identity query-volume alarm — a slow scripted extraction is what none of the three alarms sees | ~2 days | week 5 |
 | Baseline the thresholds | 30 days of traffic first | week 9 |
-| Azure AI Foundry port, model governance, continuous evaluation | a quarter each | next quarter |
 
 <!--
 The middle column is effort, the right one is when it could be finished given

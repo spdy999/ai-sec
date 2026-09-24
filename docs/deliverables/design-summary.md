@@ -313,8 +313,8 @@ each looks identical to one person blocked five times — an alarm binds to one
 metric and cannot carry a per-user dimension it was not told about in advance.
 Thresholds are chosen rather than baselined, and the trail-sourced alarm
 inherits CloudTrail's five-to-fifteen-minute delivery, so it starts an
-investigation rather than a response. The design is single-region, and the Azure
-equivalent is mapped but not implemented.
+investigation rather than a response. The design is single-region and
+single-cloud: failover is not addressed, and nothing here is built on Azure.
 
 **What comes next, with the time each actually takes.** About a week: make the
 detections name the attacker — an EventBridge rule on the telemetry event, which
@@ -327,8 +327,7 @@ build the `ApplyGuardrail` evaluation harness and gate releases on measured bloc
 rate. Then a per-identity query-volume alarm, two days' work, because a slow
 scripted extraction is the case none of the deployed alarms sees. Baselining the
 thresholds is last and cannot be hurried: it needs roughly thirty days of real
-traffic before the numbers mean anything. The Azure port, formal model
-governance and continuous evaluation are a quarter each, not a sprint.
+traffic before the numbers mean anything.
 
 The five risks that drive that ordering — with prevention, detection and
 residual for each — are in `risk-assessment.md`.
