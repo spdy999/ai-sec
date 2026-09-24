@@ -1,3 +1,8 @@
+# NOT DEPLOYED. The Kyverno controller is not installed on the cluster and
+# render.sh copies base/ only, so nothing here is applied. The properties
+# below are enforced in the pipeline gate; this file is the second half of
+# that pair, written and waiting for the controller.
+#
 # Kyverno: the organisational layer above Pod Security admission.
 #
 # Pod Security "restricted" already blocks privilege. These rules cover what it

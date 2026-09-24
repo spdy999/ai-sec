@@ -81,7 +81,8 @@ controls/terraform/
   fixtures/insecure/  deliberately broken config the gate must reject
   pipeline-iam/       root: run by hand - OIDC provider and the role Actions assumes
 controls/policy/      81 Rego rules, applied to Terraform plans AND Kubernetes YAML
-controls/kubernetes/  base manifests, Kyverno policies, manifests that must be refused,
+controls/kubernetes/  base manifests, manifests that must be refused, Kyverno policies
+                      that are NOT deployed (render.sh copies base/ only),
                       and render.sh which substitutes applied state into them
 controls/data/corpus/ six synthetic markdown documents, uploaded by the bedrock-ai
                       layer: two retrievable, one group-restricted, three that trip

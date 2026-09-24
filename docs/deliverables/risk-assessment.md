@@ -270,4 +270,9 @@ sits here rather than above.
 
 **A manifest can pass every gate and still be refused by the API server**, and a
 policy gate reads the manifest rather than what an admission webhook does to it.
-Kyverno in the cluster is the second half of that pair and is deployed.
+Pod Security admission is the half that is deployed. The other half is not: the
+digest-pinning, approved-registry and RBAC-wildcard rules live in the pipeline
+gate alone, so a manifest applied straight to the cluster is checked by neither.
+Three Kyverno policies covering exactly those properties are written in
+`controls/kubernetes/policies/` and are not installed — about a day's work to
+add the controller and an apply step, and it is on the next-steps list.

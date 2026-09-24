@@ -161,10 +161,13 @@ connection timeout.
 **Workload and admission.** Non-root, read-only root filesystem, all
 capabilities dropped, no privilege escalation, default seccomp, resource limits,
 and the image pinned by digest — a tag can be moved to point at different bytes,
-a digest cannot. Three Kyverno policies enforce the same properties at the API
-server, so the cluster refuses a workload no pipeline gated. Both halves are
-proven by rejection inside the pipeline, which starts a real cluster for the
-job: a privileged pod must be refused with `violates PodSecurity`, and
+a digest cannot. Pod Security admission enforces the restricted profile at the
+namespace, so the API server itself refuses a privileged workload whether or not
+a pipeline gated it. The digest, registry and RBAC-wildcard requirements are
+gated in the pipeline only; three Kyverno policies that would enforce them at
+the API server as well are written and not deployed. Both halves are proven by
+rejection inside the pipeline, which starts a real cluster for the job: a
+privileged pod must be refused with `violates PodSecurity`, and
 `prove-networkpolicy.sh` sends the same packet before and after default-deny and
 requires the second to fail — a policy the API server accepts and the CNI
 ignores looks identical to one that works.
@@ -326,7 +329,10 @@ the corpus at ingestion for embedded instructions and refuse a document with no
 audience label; and about the same to replace the deploy role's remaining
 service wildcards with the actions a successful apply used. About two weeks:
 build the `ApplyGuardrail` evaluation harness and gate releases on measured block
-rate. Then a per-identity query-volume alarm, two days' work, because a slow
+rate. About a day: install Kyverno and apply the three policies already written
+for it, so digest-pinning, the registry allow-list and the RBAC-wildcard refusal
+hold at the API server and not only in the pipeline. Then a per-identity
+query-volume alarm, two days' work, because a slow
 scripted extraction is the case none of the deployed alarms sees. Baselining the
 thresholds is last and cannot be hurried: it needs roughly thirty days of real
 traffic before the numbers mean anything.

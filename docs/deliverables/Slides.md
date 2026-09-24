@@ -76,6 +76,8 @@ style: |
   .muted { color: #64748b; font-size: 21px; }
   .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
   section.diagram { padding: 28px 40px 20px; text-align: center; }
+  section.tight table { font-size: 18px; }
+  section.tight td { padding: 5px 13px; }
   section.diagram h1 { font-size: 32px; padding-bottom: 6px; margin-bottom: 10px; text-align: left; }
   section.diagram img { display: block; margin: 0 auto; }
   section.diagram .muted { font-size: 18px; }
@@ -501,6 +503,8 @@ carries, plus a typed confirm=destroy on the teardown.
 
 ---
 
+<!-- _class: tight -->
+
 # Limitations
 
 **Stated openly rather than discovered in questioning.**
@@ -508,11 +512,12 @@ carries, plus a typed confirm=destroy on the teardown.
 | Limitation | Why |
 |---|---|
 | Prompt injection is mitigated, not solved | No reliable separation of instruction from content exists today |
-| The guardrail scans the question, not the passages | An injection planted in a document is declined by the model, not blocked; the retrieval filter caps what it can reach |
+| The guardrail scans the question, not the passages | Injection planted in a document is declined by the model, not blocked |
 | Block rate demonstrated, not measured | The evaluation harness is designed; there was no minute for it |
 | **Alarms name the metric, not the identity** | An alarm binds to one metric; per-user needs Contributor Insights |
+| Admission enforces Pod Security only | Digest, registry and RBAC-wildcard rules are gated in the pipeline; the Kyverno policies are written, not installed |
 | Thresholds chosen, not baselined | Real numbers need production traffic |
-| Content-filter tier left on the Bedrock default | A default rather than a decision |
+| Content-filter tier left on the default | A default rather than a decision |
 | Single-region | Failover across regions is not addressed |
 
 <!--
@@ -540,6 +545,7 @@ who has run these systems and someone who has read about them.
 |---|---|---|
 | Detections that name the attacker — EventBridge on the telemetry event, which carries the subject, so one identity is revoked rather than mailed about | ~1 week | week 1 |
 | Scan the corpus at ingestion for embedded instructions; refuse a document with no audience label | ~3 days | week 2 |
+| Install Kyverno and apply the three policies already written — digest pinning, registry allow-list and RBAC wildcards enforced at the API server, not only in the pipeline | ~1 day | week 2 |
 | Red-team the guardrail against a published injection corpus, gate releases on the measured block rate | ~2 weeks | week 4 |
 | Per-identity query-volume alarm — a slow scripted extraction is what none of the three alarms sees | ~2 days | week 5 |
 | Baseline the thresholds | 30 days of traffic first | week 9 |
