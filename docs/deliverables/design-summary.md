@@ -58,8 +58,10 @@ cannot be fully prevented.
 ingress rules and no SSH. Infrastructure is applied by a GitHub Actions role
 assumed through OIDC, with no stored keys.
 
-`diagram/architecture-overview.png` is generated from the repository that holds
-the Terraform, so picture and code cannot drift apart.
+`diagram/architecture-overview.png` is rendered from mermaid source held beside
+the Terraform it describes. Every AWS box in it is a real resource in
+`controls/terraform/`; the mediation service is a manifest in
+`controls/kubernetes/`.
 
 ---
 

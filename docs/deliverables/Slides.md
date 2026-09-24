@@ -190,7 +190,7 @@ the internet, so exfiltration has no network path.
 
 <br>
 
-<span class="muted">Every box in the diagram is a real resource in <code>controls/terraform/</code> — the picture and the code cannot drift apart.</span>
+<span class="muted">Every AWS box in the diagram is a real resource in <code>controls/terraform/</code>; the mediation service is a manifest in <code>controls/kubernetes/</code>.</span>
 
 <!--
 The third row is the most important architectural claim in the deck.
