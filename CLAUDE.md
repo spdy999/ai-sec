@@ -138,8 +138,9 @@ it the credentials are wrapped in a `GetSessionToken` session that IAM refuses
 with `InvalidClientTokenId`, while `sts:GetCallerIdentity` succeeds with the
 same token, so the credentials look fine. The account is `891377211626`, the
 profile `spdy999`. It replaced `171414227044` / `pun100` on 2026-09-22; the old
-account is torn down and empty, and anything still naming it (old commits,
-`docs/evidence/aws-live-capture.md`) is history rather than configuration.
+account is torn down and empty, and anything still naming it in old commits is
+history rather than configuration. `docs/evidence/aws-live-capture.md` was
+recaptured against the live stack on 2026-09-24 and now reads 891377211626.
 
 **The S3 backend is generated at deploy time, never committed.** Declaring a
 `backend "s3"` block in either root makes `terraform plan` refuse to run
@@ -693,12 +694,13 @@ records.md` is `support-team` only, so for `alice` it is never a retrieval
 candidate, nothing is there to mask, and the model's own refusal was all that
 answered. `customer-and-payment-data` now sits alongside `credential-disclosure`
 in `modules/bedrock-guardrail`, and a denied topic is evaluated on the input, so
-the request is refused whether or not the document was retrievable. Applied on
-2026-09-23, which created guardrail version 2 — but the push touched no
-application file, so `app release` never ran and the pods stay rendered against
-version 1. The user then set the row aside as cosmetic, so the redeploy was not
-run. To pick it up: dispatch `app deploy` with the current digest, which
-re-renders `BEDROCK_GUARDRAIL_VERSION` from applied state.
+the request is refused whether or not the document was retrievable. The version
+skew that followed it is gone: the rebuild created the guardrail fresh, so
+**version 1 on this stack already carries both denied topics** and that is what
+the pods render against. Proven on 2026-09-24 — `ApplyGuardrail` on
+`y2udzznximxl` version 1 returns `GUARDRAIL_INTERVENED` with
+`customer-and-payment-data` `BLOCKED`. No redeploy needed; only version 1 and
+DRAFT exist now.
 
 **Still unbuilt, and it matters:** `--recreate` drops the index before it
 rebuilds it, so a failed reindex leaves the service answering nothing, and a
@@ -868,7 +870,7 @@ bill. Not chosen. The zero-cost seam is an
 `aws_cloudwatch_log_subscription_filter` on both log groups with `count` on an
 empty-by-default `siem_destination_arn`. Not built.
 
-## Rebuilt and live as of 2026-09-23, fourth time — and the live alarms have drifted
+## Rebuilt and live as of 2026-09-23, fourth time
 
 Brought back on the user's instruction with the full chain — `infra provision`
 → `app secrets -f confirm=rotate` → `app release` → `app index -f confirm=index`,
@@ -878,13 +880,12 @@ the rebuild, so regenerate `~/.kube/koerber-live.yaml` before any kubectl call.
 **Nothing was torn down at the end of this session — the stack is up and
 billing.**
 
-**The account and the tree disagree about the alarms.** The rejected
-per-subject work was applied live before it was reverted in git, so the account
-carries four alarms and two SNS topics (`-security-alerts-high` /
-`-security-alerts-low`) while the tree declares three alarms and one topic. The
-next push to main reconciles it by destroying the extras — harmless, but a
-`describe-alarms` before that push does not match the code. `/demo` Step 0
-expects three alarms and will read wrong until then.
+**The alarm drift is resolved.** The rejected per-subject work had been applied
+live before it was reverted in git, leaving four alarms and two SNS topics in
+the account against three alarms and one topic in the tree. A later apply
+reconciled it: `describe-alarms` on 2026-09-24 returns exactly the three, each
+with the single `-security-alerts` topic as its action, so `/demo` Step 0 reads
+true again.
 
 ## Torn down and rebuilt on 2026-09-23, third time, then down again
 
