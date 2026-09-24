@@ -502,7 +502,7 @@ carries, plus a typed confirm=destroy on the teardown.
 | **Alarms name the metric, not the identity** | An alarm binds to one metric; per-user needs Contributor Insights |
 | Thresholds chosen, not baselined | Real numbers need production traffic |
 | Content-filter tier left on the Bedrock default | A default rather than a decision |
-| Single-region, single-cloud | Failover is not addressed, and nothing here is built on Azure |
+| Single-region | Failover across regions is not addressed |
 
 <!--
 Volunteering limitations is deliberate. It is the difference between someone

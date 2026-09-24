@@ -313,8 +313,8 @@ each looks identical to one person blocked five times — an alarm binds to one
 metric and cannot carry a per-user dimension it was not told about in advance.
 Thresholds are chosen rather than baselined, and the trail-sourced alarm
 inherits CloudTrail's five-to-fifteen-minute delivery, so it starts an
-investigation rather than a response. The design is single-region and
-single-cloud: failover is not addressed, and nothing here is built on Azure.
+investigation rather than a response. The design is single-region, and failover
+across regions is not addressed.
 
 **What comes next, with the time each actually takes.** About a week: make the
 detections name the attacker — an EventBridge rule on the telemetry event, which
