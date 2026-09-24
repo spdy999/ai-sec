@@ -247,11 +247,11 @@ subscription filter to Firehose or a cross-account destination is the seam.
 GuardDuty and Security Hub go on first in production, because they need no
 ingestion pipeline to be useful.
 
-**Runbooks, availability, cost.** `docs/RUNBOOK.md` carries deploy order, access
-through Session Manager, token minting, teardown and rebuild, and the failures
-that actually happened with the evidence each produced. Two replicas run behind
-the service, and secrets are read at startup rather than mounted, so a rotation
-needs no redeploy; the known gap is ingestion, where a rebuild drops the index
+**Runbooks, availability, cost.** The repository README is the operator
+document: deploy order, access through Session Manager, token minting, teardown
+and rebuild, and a troubleshooting table of the failures that actually happened
+with the evidence each produced. Two replicas run behind the service, and
+secrets are read at startup rather than mounted, so a rotation needs no redeploy; the known gap is ingestion, where a rebuild drops the index
 before it writes it, so a failed run leaves the assistant answering nothing. A
 monthly budget with forecast notifications and a Cost Explorer anomaly monitor
 across every service cover spend — a security control as much as a financial
