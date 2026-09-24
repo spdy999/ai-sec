@@ -121,9 +121,9 @@ An internal assistant that answers employee questions from company documents.
 
 **Why it is different from a normal app**
 
-It is an employee who has read every
-document in the company, never sleeps,
-and answers anyone who asks.
+This app behaves like an employee who has
+read every document in the company, never
+sleeps, and answers anyone who asks.
 
 A normal app fetches the rows that belong
 to you. This one has already read
