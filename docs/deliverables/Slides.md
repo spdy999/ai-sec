@@ -121,17 +121,15 @@ An internal assistant that answers employee questions from company documents.
 
 **Why it is different from a normal app**
 
-**It has read everything.** A normal app
-shows you the records you own. This one
-holds all of them and decides, per
-question, what to reveal.
+It is an employee who has read every
+document in the company, never sleeps,
+and answers anyone who asks.
 
-**It cannot tell instructions from
-content.** A document saying *"ignore your
-rules"* arrives looking like a question.
-
-**It concentrates privilege.** Compromise
-the service and you have the corpus.
+So it knows the answer to every question.
+The design is about the *other* half:
+deciding, per question, who is entitled
+to the answer — before it is composed,
+not after.
 
 </div>
 </div>
