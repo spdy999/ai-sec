@@ -2,176 +2,181 @@
 
 Secure enterprise GenAI assistant on AWS Bedrock and EKS.
 
-All three diagrams below are backed by the Terraform module in
-`controls/terraform/`, so the picture and the code cannot drift apart. Resource
-names in the notes refer to real addresses in that module.
+Every component below is deployed in account `891377211626`, `eu-central-1`, and
+backed by Terraform in `controls/terraform/`. Anything designed but not built is
+listed at the end rather than drawn, so the picture cannot claim more than the
+account contains.
 
 ---
 
 ## 1. Platform overview
 
-The main diagram. Four trust boundaries, one direction of travel: a request
-crosses each boundary only through a single mediated chokepoint.
+Four trust boundaries. A request crosses each one through a single mediated
+chokepoint, and no boundary is crossed by the model's own judgement.
 
 ```mermaid
 flowchart TB
-    subgraph corporate["🏢 Corporate zone — trusted users, untrusted input"]
-        user["Employee<br/><i>browser / Teams</i>"]
-        idp["Entra ID<br/><i>SSO, MFA, group claims</i>"]
-    end
-
-    subgraph edge["🌐 Edge — authentication and rate control"]
-        waf["WAF + API Gateway<br/><i>TLS, throttling, OIDC validation</i>"]
+    subgraph corporate["🏢 Caller zone — trusted user, untrusted input"]
+        user["Employee<br/><i>browser, signed token<br/>carrying subject + groups</i>"]
     end
 
     subgraph platform["☸️ Platform zone — EKS, private subnets, no internet egress"]
-        direction TB
-        proxy["<b>AI mediation layer</b><br/><i>guardrail proxy — CONTROL 2</i><br/>input scan · RAG ACL · tool allow-list · output redaction"]
-        tools["Tool / MCP executor<br/><i>approved business APIs only</i>"]
+        proxy["<b>Mediation service</b><br/><i>FastAPI on EKS, IRSA</i><br/>validates the token · filters retrieval<br/>by group · records telemetry"]
     end
 
-    subgraph data["🔒 Data zone — CMK encrypted, VPC endpoint only"]
-        direction TB
-        vectors[("OpenSearch Serverless<br/><i>vector store</i><br/>AllowFromPublic = false")]
-        docs[("S3 RAG corpus<br/><i>versioned, TLS enforced</i>")]
-        bedrock["Amazon Bedrock<br/><i>approved models + guardrail</i>"]
+    subgraph operator["🛠️ Operator zone — Session Manager only, no ingress"]
+        bastion["Jump host<br/><i>the only writer</i><br/>indexes the corpus · generates secrets<br/>applies manifests"]
+    end
+
+    subgraph data["🔒 Data zone — CMK encrypted, reached only by VPC endpoint"]
+        bedrock["Amazon Bedrock<br/><i>Converse + guardrail version</i><br/>EU inference profile"]
+        vectors[("OpenSearch Serverless<br/><i>vector index</i><br/>service reads · jump host writes")]
+        docs[("S3 RAG corpus<br/><i>versioned, CMK</i>")]
+        secrets[("Secrets Manager<br/><i>signing key + TLS pair</i><br/>resource policy names two roles")]
     end
 
     subgraph observe["📊 Security operations"]
-        logs["CloudWatch<br/><i>invocation audit trail</i>"]
-        siem["SIEM<br/><i>detections, alerting</i>"]
+        telemetry["CloudWatch Logs<br/><i>mediation telemetry, no prompt text</i>"]
+        trail["CloudTrail<br/><i>Converse + ApplyGuardrail events</i>"]
+        alarms["3 metric filters + alarms<br/><i>interventions · refusals · AccessDenied</i>"]
+        sns["SNS topic, CMK encrypted"]
+        queue[("SQS queue<br/><i>proves delivery</i>")]
     end
 
-    user -->|"1 authenticate"| idp
-    idp -->|"2 OIDC token + groups"| waf
-    waf -->|"3 mTLS"| proxy
+    user -->|"1 question + token"| proxy
+    proxy -->|"2 search, filtered by allowed_groups"| vectors
+    proxy -->|"3 Converse + guardrailIdentifier"| bedrock
+    proxy -->|"startup"| secrets
+    proxy -->|"refusals, interventions"| telemetry
 
-    proxy -->|"4 retrieve, filtered by user groups"| vectors
-    vectors -.->|"source documents"| docs
-    proxy -->|"5 InvokeModel + guardrailIdentifier<br/><i>PrivateLink, never public internet</i>"| bedrock
-    proxy -->|"6 invoke, only if on allow-list"| tools
+    bastion --> vectors
+    bastion --> docs
+    bastion --> secrets
 
-    proxy -->|"security events"| logs
-    bedrock -->|"model invocation logs"| logs
-    logs --> siem
+    bedrock --> trail
+    telemetry --> alarms
+    trail --> alarms
+    alarms --> sns --> queue
 
-    classDef boundary fill:#f8f9fb,stroke:#5b6b8c,stroke-width:2px
     classDef control fill:#fff4e6,stroke:#d97706,stroke-width:3px,color:#7c2d12
     classDef store fill:#eef6ff,stroke:#2563eb
     classDef sec fill:#f0fdf4,stroke:#16a34a
+    classDef ops fill:#f5f3ff,stroke:#7c3aed
 
     class proxy control
-    class vectors,docs,bedrock store
-    class logs,siem sec
+    class vectors,docs,bedrock,secrets store
+    class telemetry,trail,alarms,sns,queue sec
+    class bastion ops
 ```
 
 **Why the shape is this shape**
 
 | Decision | Reason |
 |---|---|
-| One mediation layer, no direct model access | A single chokepoint is the only place a guardrail can be enforced consistently. Anything that bypasses it still meets the server-side Bedrock guardrail — defence in depth, not a single wall. |
-| Data zone has no route to the internet | Inference and retrieval traffic uses VPC endpoints (`aws_vpc_endpoint.bedrock_runtime`, `aws_vpc_endpoint.s3`). There is no NAT gateway, so an exfiltration attempt has no network path. |
-| Retrieval is filtered *before* the model sees it | The model cannot keep a secret it was never given. Document-level ACL enforcement at step 4 is stronger than asking the model to withhold an answer at step 5. |
-| Tool execution is separated from the proxy | The component that decides *whether* a tool may run is not the component that runs it. |
+| One mediation service, no direct model access | A single chokepoint is the only place entitlement can be enforced consistently. Anything reaching Bedrock another way still meets the server-side guardrail — defence in depth, not a single wall. |
+| Retrieval is filtered *before* the model sees it | The model cannot leak a passage it was never given. The filter is a `terms` clause on `allowed_groups` inside the search query, not a post-hoc check on the answer. |
+| The service reads the index and never writes it | The OpenSearch data access policy grants writes to the jump host role alone, so corpus poisoning by prompt injection is impossible rather than unlikely — the identity running the injection has no write permission to use. |
+| No NAT gateway, no internet gateway, no SSH | Every AWS call leaves through a VPC endpoint; the only way in is Session Manager, which dials out. An exfiltration attempt has no network path. |
+| The audit trail carries no prompt text | CloudTrail records the call and the guardrail evaluation, not the content. Replay of what was asked is lost deliberately; a log full of prompts is a second copy of the data the guardrail exists to protect. |
 
 ---
 
-## 2. Zoom-in — the request path through the guardrail
+## 2. The request path
 
-Where Control 2 sits, and what happens to a malicious request. Every numbered
-decision is a deny point.
+Every numbered step is a place the request can be refused. The guardrail is
+evaluated twice by Bedrock — once on the question, once on the answer.
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant U as Employee
-    participant P as Mediation layer
-    participant V as Vector store
-    participant B as Bedrock
-    participant T as Tool executor
-    participant S as SIEM
+    participant P as Mediation service
+    participant V as OpenSearch
+    participant B as Bedrock (Converse + guardrail)
+    participant L as CloudWatch
 
-    U->>P: question + OIDC token
+    U->>P: question + signed token
 
     rect rgba(255, 244, 230, 0.6)
-        note over P: INPUT INSPECTION
-        P->>P: validate token, extract group claims
-        P->>P: scan for prompt injection patterns
-        P->>P: detect and mask PII before it leaves the estate
+        note over P: ADMISSION
+        P->>P: verify signature, extract subject and groups
+        P->>P: bound the question — typed, length limited
     end
 
-    alt injection detected
-        P-->>U: refused, generic message
-        P->>S: 🚨 ai.prompt_injection.blocked
-    else clean
-        P->>V: similarity search, filtered by user groups
-        V-->>P: only chunks this user may read
+    alt token missing or invalid
+        P-->>U: 401
+        P->>L: authorization_refused
+    else valid
+        P->>V: similarity search, filter allowed_groups = caller groups
+        V-->>P: only passages this caller may read
 
         rect rgba(238, 246, 255, 0.6)
-            note over P,B: context is assembled with retrieved text<br/>clearly delimited as DATA, not instructions
-            P->>B: InvokeModel + guardrailIdentifier (pinned version)
-            B-->>P: response
+            note over P,B: the question is wrapped in guardContent —<br/>retrieved passages are not, so a planted<br/>injection in a document cannot block the corpus
+            P->>B: Converse(system, passages, question) + guardrailIdentifier + version
+            B->>B: input: denied topics, prompt attack
+            B->>B: output: PII anonymise, card numbers blocked
+            B-->>P: answer, or intervention
         end
 
-        opt model requests a tool
-            P->>P: is this tool on the allow-list for this user?
-            alt not allowed
-                P-->>U: refused
-                P->>S: 🚨 ai.tool.denied
-            else allowed
-                P->>T: execute with scoped, short-lived credentials
-                T-->>P: result
-            end
+        alt guardrail intervened on input
+            P-->>U: "blocked by the Korber AI security guardrail"
+            P->>L: guardrail_intervened
+        else answered
+            P-->>U: answer + sources
+            P->>L: guardrail_intervened only if the output was masked
         end
-
-        rect rgba(255, 244, 230, 0.6)
-            note over P: OUTPUT INSPECTION
-            P->>P: redact PII and secrets from the answer
-            P->>P: verify no citation outside the user's permitted set
-        end
-
-        P-->>U: answer + citations
-        P->>S: ai.request.completed (decision trail)
     end
 ```
 
-**The key insight in this diagram**
+**Three things to say about this diagram under questioning**
 
-Retrieved document text is inserted into the prompt as *data*, never as
-instructions. This is the structural answer to prompt injection: the attack
-works by making the model mistake content for commands, so the mitigation is to
-mark the boundary explicitly and to filter at retrieval time — not to ask the
-model politely to ignore it.
+1. **`Converse`, not `InvokeModel`.** With `InvokeModel` and the Anthropic
+   Messages body, Bedrock ignores the `guardContent` tags entirely: the trace
+   returns with every policy unit at zero and `guardrailAction: NONE`, while the
+   model's own refusal makes it look like the control worked. The same text
+   through `ApplyGuardrail` comes back `BLOCKED` at HIGH confidence — that
+   difference is how a misconfigured guardrail is told apart from an unapplied
+   one.
+
+2. **Only the question is wrapped.** The `guardContent` block scopes the scan
+   rather than enabling it. One corpus document is a planted injection; scanning
+   quoted passages would block the corpus instead of the caller.
+
+3. **An anonymisation is an intervention.** A masked answer and a blocked
+   request both set `guardrail_intervened`, so the flag alone does not separate
+   them — the answer body does.
 
 ---
 
-## 3. Zoom-in — identity and permissions
+## 3. Identity and permissions
 
-No static credentials exist anywhere in this design. Each arrow is a trust
-relationship that can be revoked independently.
+No static credential exists anywhere in this design. Each arrow is a trust
+relationship that can be revoked on its own.
 
 ```mermaid
 flowchart LR
-    subgraph human["Human identity"]
+    subgraph human["Caller identity"]
         emp["Employee"]
-        grp["Entra ID group<br/><i>drives document ACLs</i>"]
+        grp["Group claim<br/><i>drives the retrieval filter</i>"]
     end
 
-    subgraph nhi["Non-human identity (NHI)"]
-        sa["K8s ServiceAccount<br/><code>genai-platform/genai-mediation</code>"]
+    subgraph nhi["Workload identity"]
+        sa["ServiceAccount<br/><code>genai-platform/genai-mediation</code>"]
         oidc["EKS OIDC provider"]
         role["IAM role<br/><code>*-mediation</code>"]
     end
 
     subgraph perms["What that role may do — and nothing else"]
-        p1["bedrock:InvokeModel<br/><i>only approved model ARNs</i><br/><i>only with the guardrail attached</i>"]
-        p2["s3:GetObject<br/><i>RAG bucket only</i>"]
-        p3["aoss:APIAccessAll<br/><i>one collection</i>"]
-        p4["logs:PutLogEvents<br/><i>one log group</i>"]
+        p1["bedrock:InvokeModel<br/><i>approved model ARNs only</i><br/><i>only with the guardrail attached</i>"]
+        p2["bedrock:InvokeModel on Titan<br/><i>embeddings, separate statement,<br/>no guardrail condition</i>"]
+        p3["aoss:APIAccessAll<br/><i>one collection, read only</i>"]
+        p4["secretsmanager:GetSecretValue<br/><i>two secret ARNs</i>"]
+        p5["kms:Decrypt<br/><i>ViaService: s3, bedrock, secretsmanager</i>"]
+        p6["logs:PutLogEvents<br/><i>one log group</i>"]
     end
 
     emp --> grp
-    grp -.->|"filters retrieval"| p2
+    grp -.->|"filters retrieval"| p3
 
     sa -->|"projected token"| oidc
     oidc -->|"AssumeRoleWithWebIdentity<br/><b>sub pinned to one service account</b>"| role
@@ -179,44 +184,68 @@ flowchart LR
     role --> p2
     role --> p3
     role --> p4
+    role --> p5
+    role --> p6
 
-    classDef deny fill:#fef2f2,stroke:#dc2626,stroke-dasharray: 5 3,color:#7f1d1d
     classDef ok fill:#f0fdf4,stroke:#16a34a
-
-    class p1,p2,p3,p4 ok
+    class p1,p2,p3,p4,p5,p6 ok
 ```
 
-**Two details that matter under questioning**
+**Four details that matter under questioning**
 
 1. **The trust policy pins one service account.** `StringEquals` on the `sub`
-   claim, matching exactly
-   `system:serviceaccount:genai-platform:genai-mediation`. A `StringLike` with a
-   wildcard here would let *any* pod in the cluster assume the role and read the
-   entire document corpus. The policy gate in `controls/policy/iam.rego` rejects
-   that pattern, and the insecure fixture proves it fires.
+   claim, matching `system:serviceaccount:genai-platform:genai-mediation`
+   exactly. A `StringLike` wildcard would let any pod in the cluster assume the
+   role and read the corpus. `controls/policy/iam.rego` rejects that pattern and
+   the insecure fixture proves the rule fires.
 
-2. **The model allow-list is enforced twice.** Once in the IAM policy, and again
-   in the VPC endpoint policy. A pod that somehow obtained broader IAM
-   permissions still cannot reach an unapproved model from inside this VPC.
+2. **Embeddings need their own statement.** The model grant is conditioned on
+   `bedrock:GuardrailIdentifier`; an embedding call carries no guardrail, so
+   that condition could never match and the workload could not embed at all.
+   Found only by asking a real question.
+
+3. **The model allow-list is enforced twice.** Once in IAM, once in the Bedrock
+   VPC endpoint policy. A pod that somehow acquired broader IAM permissions
+   still cannot reach an unapproved model from inside this VPC. The endpoint
+   pins which model, with a wildcard region; which regions are permitted stays
+   in IAM, where the account evaluates it.
+
+4. **Anthropic models are reachable only through an inference profile**, and the
+   EU profile routes to six regions — so IAM authorises the
+   `inference-profile/` ARN in this account and the `foundation-model/` ARN in
+   each of those six. Authorising only the profile produces an AccessDenied that
+   names the model ARN and explains nothing.
 
 ---
 
+## Designed, not deployed
+
+Drawn nowhere above, because the account does not contain them:
+
+- **Corporate IdP.** In production the token comes from Entra ID with group
+  claims. Here the same key signs tokens minted for `alice` and `dana` inside
+  the pod, so the authorisation logic is real and the identity source is not.
+- **WAF and API Gateway.** There is no public entry point at all; the front end
+  is reached through Session Manager and a port-forward.
+- **SIEM.** The seam is an `aws_cloudwatch_log_subscription_filter` on both log
+  groups, gated on an empty destination ARN. Nothing subscribes today.
+- **Tools.** The assistant calls none. It retrieves and it answers.
+
 ## Assumptions
 
-- Entra ID is the enterprise IdP and already issues group claims usable for
-  document-level authorisation.
-- The EKS cluster, VPC, subnets and node security group exist and are managed
-  outside this module; they are passed in as variables.
-- Synthetic values are used for all account IDs, VPC IDs and subnet IDs.
-- `eu-central-1` is the designated region for EU data residency.
+- Group names match on both sides — the token's claim and the document's
+  `Audience:` header. There is no registry; a typo in either yields zero
+  matches.
+- `eu-central-1` is the designated region for EU data residency, and the EU
+  inference profile's six regions are all inside the EU.
+- All sample data is synthetic.
 
 ## Limitations
 
-- Nothing here is deployed. The design is validated offline against the rendered
-  Terraform plan; it has not been applied to a live AWS account.
-- IRSA token exchange cannot be tested without a real OIDC provider and STS. The
-  trust policy *document* is validated by policy-as-code; the runtime exchange is
-  not.
-- Azure AI Foundry is not drawn. The same structure maps onto it — Entra ID
-  workload identity in place of IRSA, Private Link in place of VPC endpoints,
-  Azure Policy in place of the OPA gate.
+- **The alarms name the metric, not the identity.** A CloudWatch alarm binds to
+  one metric, so interventions are summed across every caller.
+- **The guardrail runs on the default content-filter tier** (Classic), by
+  default rather than by decision.
+- **IRSA, EKS access entries and etcd envelope encryption are proven only by
+  running the platform**, which this deployment does — but they cannot be
+  demonstrated without an account.
