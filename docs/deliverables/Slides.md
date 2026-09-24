@@ -110,23 +110,28 @@ An internal assistant that answers employee questions from company documents.
 <div>
 
 **What it does**
-- Employees ask questions in natural language
-- Retrieves from internal document corpus (RAG)
-- May invoke approved business APIs
-- Runs containerised on Kubernetes
-- Processes confidential EU employee data
+- Employees ask in natural language
+- Retrieves from an internal corpus (RAG)
+- Runs containerised on EKS
+- Holds confidential EU employee data
+- Calls no tools — retrieves and answers
 
 </div>
 <div>
 
 **Why it is different from a normal app**
 
-It is an employee who has read every
-document in the company, never sleeps,
-and answers anyone who asks.
+**It has read everything.** A normal app
+shows you the records you own. This one
+holds all of them and decides, per
+question, what to reveal.
 
-The usual question — *"is this user
-authorised?"* — is no longer enough.
+**It cannot tell instructions from
+content.** A document saying *"ignore your
+rules"* arrives looking like a question.
+
+**It concentrates privilege.** Compromise
+the service and you have the corpus.
 
 </div>
 </div>
