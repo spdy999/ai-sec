@@ -395,11 +395,8 @@ skipped it is refused by the account before it reaches Bedrock.
 > an identity is being used for something it was not granted.
 
 <!--
-Metric filter, alarm, SNS topic, and an SQS queue as the topic's only
-subscription, so the delivery path is provable by reading the alarm JSON back
-rather than by clicking a confirmation link. An email subscription was tried and
-removed: it never delivered on this account and a green apply reported it as
-created regardless. Production subscribes a paging tool to the same topic.
+Metric filter, alarm, SNS topic, and an SQS queue subscribed alongside the email
+so the delivery path is provable without clicking a confirmation link.
 
 Thresholds sit above one on purpose: a single guardrail block is the control
 working as designed, and paging on it teaches people to ignore the alert.

@@ -44,7 +44,7 @@ gh variable list
 ```
 
 `TF_STATE_BUCKET`, `AWS_DEPLOY_ROLE_ARN`, `CLUSTER_ADMIN_ARNS`,
-`COST_ALERT_EMAIL`. `CLUSTER_ADMIN_ARNS` unset is the
+`COST_ALERT_EMAIL`, `SECURITY_ALERT_EMAIL`. `CLUSTER_ADMIN_ARNS` unset is the
 expensive one: the cluster comes up with no human admin, `kubectl` answers
 `Unauthorized`, and fixing it costs another apply.
 

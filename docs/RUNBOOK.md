@@ -23,7 +23,7 @@ setup below.
 
 Repository variables `TF_STATE_BUCKET`, `TF_STATE_REGION`,
 `TF_STATE_KMS_KEY_ARN`, `AWS_DEPLOY_ROLE_ARN`, `CLUSTER_ADMIN_ARNS`,
-`COST_ALERT_EMAIL`, and an Actions environment named
+`COST_ALERT_EMAIL`, `SECURITY_ALERT_EMAIL`, and an Actions environment named
 `production`. The environment name is load-bearing — the OIDC trust policy pins
 `environment:production` in the token subject, so a job without it cannot assume
 the role.
@@ -254,9 +254,8 @@ aws sqs receive-message --queue-url "$QUEUE" --wait-time-seconds 20 \
   --query 'Messages[].Body' --output text | jq -r '.Message | fromjson'
 ```
 
-The queue is the topic's only subscription: an email one was tried, never
-delivered on this account and was removed, so the alert path is one that can be
-read back rather than one that needs a confirmation click. `bedrock-access-denied`
+The email subscription on that topic is `PendingConfirmation` and undiagnosed;
+the queue is the path that makes the claim checkable. `bedrock-access-denied`
 cannot be shown live — CloudTrail delivers on a five-to-fifteen-minute schedule.
 
 ## 6. Troubleshooting
@@ -300,7 +299,7 @@ Survives, and rebuild depends on it:
   workstation with admin credentials.
 - The Terraform **state bucket**. The destroy writes empty state into it.
 - Actions variables `TF_STATE_BUCKET`, `AWS_DEPLOY_ROLE_ARN`,
-  `CLUSTER_ADMIN_ARNS`, `COST_ALERT_EMAIL`, and the
+  `CLUSTER_ADMIN_ARNS`, `COST_ALERT_EMAIL`, `SECURITY_ALERT_EMAIL`, and the
   `production` environment.
 - The `eu-south-1` / `eu-south-2` region opt-ins. Account-level, they persist.
 
@@ -385,9 +384,21 @@ Why each wait matters:
 - If step 1 is dispatched while `CLUSTER_ADMIN_ARNS` is unset, the cluster comes
   up with no human admin at all and `kubectl` answers `Unauthorized`. Fixing it
   means another apply.
-- **Nothing to confirm by hand.** The alert topic's only subscription is an
-  SQS queue, which a same-account subscription confirms itself. Reading the
-  queue is the check — see the [demo walkthrough](#5-demo-walkthrough).
+- **The security alert subscription is confirmed by hand, once per rebuild.**
+  The AI layer creates an SNS topic and an email subscription; AWS mails a
+  confirmation link and delivers nothing until it is clicked, while Terraform
+  reports the subscription as created. A green apply is not evidence the alert
+  arrives:
+
+  ```bash
+  aws sns list-subscriptions-by-topic --topic-arn <topic arn> \
+    --query 'Subscriptions[].SubscriptionArn'
+  ```
+
+  A value reading `PendingConfirmation` is an alarm nobody receives. The topic
+  also delivers to an SQS queue, which needs no confirmation and is therefore
+  the path to check — see the
+  [demo walkthrough](#5-demo-walkthrough).
 
 ### 7d. The five manual minutes
 

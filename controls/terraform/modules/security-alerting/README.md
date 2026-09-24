@@ -33,18 +33,20 @@ nobody can watch change state is one nobody trusts. The trail-sourced alarm
 keeps 300: CloudTrail delivers on its own five to fifteen minute schedule, so a
 shorter window there buys nothing and only makes the alarm flap.
 
-**The queue is the only subscription, and that is deliberate.** An email
-subscription was tried and removed: AWS sends a confirmation link and delivers
-nothing until it is clicked, while Terraform reports the subscription as
-created, so a green apply was not evidence the alert arrived. On this account
-nothing ever arrived, twice, including from a plain unencrypted topic created
-by hand as a control — undiagnosed. A same-account SQS subscription confirms
-itself, so the notification path is provable instead: `receive-message`
-printing the alarm JSON shows the message was produced, routed and delivered,
-where an inbox shows only that nothing came. A real deployment subscribes a
-paging tool to the same topic; that is a subscription, not a redesign. Messages
-are kept a day; the trail and the log groups are the record, this is evidence
-for the first minutes of an investigation.
+**The email subscription needs a human.** AWS sends a confirmation link and
+delivers nothing until it is clicked, while Terraform reports the subscription
+as created. A green apply is not evidence the alert arrives — confirm it, then
+`aws sns list-subscriptions-by-topic` and check the ARN is not
+`PendingConfirmation`.
+
+**The queue does not.** The topic also delivers to an SQS queue, and a
+same-account subscription confirms itself. That is the provable half of the
+notification path: `receive-message` printing the alarm JSON shows the message
+was produced, routed and delivered, where an inbox shows only that nothing
+arrived. On this account nothing ever did, twice, including from a plain
+unencrypted topic created by hand as a control — undiagnosed, and the reason
+the queue exists. Messages are kept a day; the trail and the log groups are the
+record, this is evidence for the first minutes of an investigation.
 
 The topic is encrypted with the platform CMK, so that key's policy must name
 `cloudwatch.amazonaws.com`: an alarm publishes as the service rather than as

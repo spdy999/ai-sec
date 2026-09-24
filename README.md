@@ -44,6 +44,7 @@ Repository **variables**:
 | `AWS_DEPLOY_ROLE_ARN` | the deploy role, from the same setup |
 | `CLUSTER_ADMIN_ARNS` | comma-separated IAM principals granted EKS cluster admin |
 | `COST_ALERT_EMAIL` | budget notifications |
+| `SECURITY_ALERT_EMAIL` | alarm notifications; falls back to `COST_ALERT_EMAIL` |
 
 And an Actions **environment** named `production`. The name is load-bearing: the
 OIDC trust policy pins `environment:production` in the token subject, so a job

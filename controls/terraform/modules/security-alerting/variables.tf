@@ -28,6 +28,17 @@ variable "trail_log_group_name" {
   type        = string
 }
 
+variable "alert_emails" {
+  description = "Addresses that receive security alerts. The default is a placeholder that must be replaced before apply; an alarm whose action goes nowhere is not a detection."
+  type        = list(string)
+  default     = ["platform-security@example.com"]
+
+  validation {
+    condition     = length(var.alert_emails) > 0
+    error_message = "At least one address must receive security alerts."
+  }
+}
+
 variable "evaluation_period_seconds" {
   description = "Window the trail-sourced alarm sums over. CloudTrail delivers on its own five to fifteen minute schedule, so a shorter window here buys nothing."
   type        = number
