@@ -125,11 +125,14 @@ It is an employee who has read every
 document in the company, never sleeps,
 and answers anyone who asks.
 
-So it knows the answer to every question.
-The design is about the *other* half:
-deciding, per question, who is entitled
-to the answer — before it is composed,
-not after.
+A normal app fetches the rows that belong
+to you. This one has already read
+everyone's, and composes a new answer
+each time — so the answer is what has to
+be authorised, and it does not exist yet.
+
+The design decides, per question, who is
+entitled to it *before* it is composed.
 
 </div>
 </div>
