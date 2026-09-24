@@ -759,11 +759,14 @@ CloudTrail is always writing; the two telemetry alarms stay
 `INSUFFICIENT_DATA` until the first `/ask`. The module README says the zero
 covers a quiet period, which is true only of a quiet period *with traffic*.
 
-**The SNS email was never delivered, and the queue is the answer.** Terraform
-reports the subscription as created; `list-subscriptions-by-topic` shows
-`PendingConfirmation` and no confirmation mail reached the address, twice,
-including from a plain unencrypted topic created by hand as a control. Still
-not diagnosed. `modules/security-alerting` now also subscribes a CMK-encrypted
+**The SNS email is confirmed as of 2026-09-24 — the user clicked the link.**
+`list-subscriptions-by-topic` now shows a real ARN for the email subscription
+alongside the SQS one, so alerts arrive both ways. It was
+`PendingConfirmation` through two earlier rebuilds with no mail arriving at all,
+including from a plain unencrypted topic created by hand as a control, which was
+never diagnosed. A rebuild issues a fresh subscription and starts that clock
+again, so the queue stays the path the demo checks.
+`modules/security-alerting` also subscribes a CMK-encrypted
 SQS queue: a same-account subscription confirms itself, so `receive-message`
 printing the alarm JSON proves the notification path without anyone clicking a
 link. SNS needs the CMK to deliver into an encrypted queue, which is why
@@ -875,7 +878,7 @@ user's instruction. Nothing is running.
 **The alerting prerequisites are built and the delivery path is proven.** Each
 detection now names its own period, the guardrail threshold is 3, and the topic
 also delivers to a CMK-encrypted SQS queue whose subscription self-confirmed
-(the email one is still `PendingConfirmation`). Proven by forcing the alarm
+(the email one was confirmed by hand on 2026-09-24). Proven by forcing the alarm
 with `cloudwatch set-alarm-state` and reading the message back off the queue --
 that is the check that exercises the `sns.amazonaws.com` KMS grant, which fails
 silently without it. The alarm was reset to `INSUFFICIENT_DATA` afterwards and

@@ -177,9 +177,10 @@ aws sqs receive-message --queue-url "$QUEUE" \
   --query 'Messages[].Body' --output text | jq -r '.Message | fromjson'
 ```
 
-The alarm JSON names the alarm, the metric, the threshold and the reason. Say
-plainly that the email subscription is `PendingConfirmation` and undiagnosed —
-the queue is what makes the claim checkable, and an unverified inbox would not.
+The alarm JSON names the alarm, the metric, the threshold and the reason. The
+email subscription is confirmed on this account, so the same alert lands in the
+inbox — but show the queue, because it is checkable on screen and an inbox is
+not, and because a rebuild starts the email subscription unconfirmed again.
 
 `bedrock-access-denied` cannot be demonstrated live: CloudTrail delivers on a
 five to fifteen minute schedule. Show it as pre-staged evidence if asked.

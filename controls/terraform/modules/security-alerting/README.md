@@ -43,9 +43,10 @@ as created. A green apply is not evidence the alert arrives — confirm it, then
 same-account subscription confirms itself. That is the provable half of the
 notification path: `receive-message` printing the alarm JSON shows the message
 was produced, routed and delivered, where an inbox shows only that nothing
-arrived. On this account nothing ever did, twice, including from a plain
-unencrypted topic created by hand as a control — undiagnosed, and the reason
-the queue exists. Messages are kept a day; the trail and the log groups are the
+arrived. The email subscription on this account is confirmed and does deliver,
+but it took two rebuilds before a confirmation mail was received at all — which
+is the reason the queue exists and stays the path the demo checks. Messages are
+kept a day; the trail and the log groups are the
 record, this is evidence for the first minutes of an investigation.
 
 The topic is encrypted with the platform CMK, so that key's policy must name

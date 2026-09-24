@@ -254,8 +254,9 @@ aws sqs receive-message --queue-url "$QUEUE" --wait-time-seconds 20 \
   --query 'Messages[].Body' --output text | jq -r '.Message | fromjson'
 ```
 
-The email subscription on that topic is `PendingConfirmation` and undiagnosed;
-the queue is the path that makes the claim checkable. `bedrock-access-denied`
+The email subscription on that topic is confirmed, so the alert arrives both
+ways; the queue is the path that stays checkable without an inbox after a
+rebuild, since a fresh subscription starts unconfirmed. `bedrock-access-denied`
 cannot be shown live — CloudTrail delivers on a five-to-fifteen-minute schedule.
 
 ## 6. Troubleshooting

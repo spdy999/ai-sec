@@ -126,8 +126,9 @@ aws-vault exec spdy999 --no-session -- aws sns list-subscriptions-by-topic \
 ```
 
 Cluster `ACTIVE` on 1.36. The SQS subscription confirms itself; the email one
-reads `PendingConfirmation` and has never been delivered on this account —
-that is known, and the queue is the path the demo checks.
+starts at `PendingConfirmation` and stays there until someone clicks the link
+AWS mails — one manual step per rebuild. The queue is the path the demo checks
+either way.
 
 **A rebuild issues a new cluster endpoint and CA**, so the kubeconfig is stale
 before any kubectl call:

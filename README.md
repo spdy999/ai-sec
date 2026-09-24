@@ -409,10 +409,11 @@ Stated because they bound what the implementation can claim.
   What is lost is replay of what was asked; what is gained is that no prompt is
   ever written to a log, which is what the mediation service's telemetry already
   refused to do.
-- **The email alert subscription is `PendingConfirmation` and undiagnosed.** No
-  confirmation mail arrived, twice, including from a plain unencrypted topic
-  created by hand as a control. The topic also delivers to an SQS queue, which
-  self-confirms — that queue is why the notification path is provable at all.
+- **The email subscription needs a human to confirm it, once per rebuild.** A
+  green apply is not evidence an alert arrives: Terraform reports the
+  subscription as created while AWS holds it at `PendingConfirmation` until
+  someone clicks the link. The topic also delivers to an SQS queue, which
+  self-confirms and is therefore the path a demo can prove without an inbox.
 
 ### What the pipeline does not enforce
 
