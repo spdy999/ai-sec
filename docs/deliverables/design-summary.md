@@ -161,9 +161,11 @@ capabilities dropped, no privilege escalation, default seccomp, resource limits,
 and the image pinned by digest — a tag can be moved to point at different bytes,
 a digest cannot. Three Kyverno policies enforce the same properties at the API
 server, so the cluster refuses a workload no pipeline gated. Both halves are
-proven by rejection: deliberately bad manifests thrown at a real API server must
-be refused, and `prove-networkpolicy.sh` sends the same packet before and after
-default-deny and shows it stop arriving.
+proven by rejection inside the pipeline, which starts a real cluster for the
+job: a privileged pod must be refused with `violates PodSecurity`, and
+`prove-networkpolicy.sh` sends the same packet before and after default-deny and
+requires the second to fail — a policy the API server accepts and the CNI
+ignores looks identical to one that works.
 
 ### 3.5 Data protection
 

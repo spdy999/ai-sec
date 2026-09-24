@@ -345,6 +345,7 @@ it accepts good input. All of it runs in the pipeline.
 | The gate refuses insecure infrastructure | 65 violations found in the deliberately broken fixture | `security.yml`, negative test |
 | The gate refuses insecure workloads | 29 violations found in `controls/kubernetes/bad/` | `security.yml`, workload policy gate |
 | A real API server refuses a privileged pod | admission rejects it with `violates PodSecurity` | `security.yml`, workload policy gate |
+| Default-deny egress is enforced, not just declared | the same packet succeeds before the policy and fails after it | `security.yml`, workload policy gate |
 | The rendered manifests are gated, not only the committed ones | the policy runs after real identifiers are substituted | `app-deploy.yml` |
 | No rule is decorative | 77 of 81 rules proven to fire; 4 exempt, each named with a reason | `security.yml`, rule coverage |
 | No credential reaches the repository | full-history secret scan | `security.yml`, secret scan |

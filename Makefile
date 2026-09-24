@@ -25,13 +25,6 @@ PLAN_FIXTURE := $(FIXTURE_DIR)/plan.json
 # is already newer than the Terraform that produced it. `make demo` used to
 # plan twice and print the same four lines twice on screen.
 MODULE_SRC := $(wildcard controls/terraform/modules/*/*.tf)
-KIND_CLUSTER := koerber-demo
-
-# Every kubectl call names its context explicitly. Never current-context: a
-# stray apply of a deliberately-privileged test pod must not be able to reach a
-# real cluster.
-KUBECTL := kubectl --context kind-$(KIND_CLUSTER)
-KIND    := KIND_EXPERIMENTAL_PROVIDER=podman kind
 
 # Strip any real AWS credentials from the environment so the offline claim is
 # enforced rather than assumed.
@@ -39,8 +32,6 @@ NO_AWS := env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN
 
 .PHONY: help init fmt validate plan plan-insecure policy policy-plan policy-negative \
         policy-k8s policy-k8s-negative policy-coverage \
-        kind-up kind-down k8s-apply k8s-admit \
-        k8s-demo netpol-proof \
         ci demo clean
 
 help:
@@ -52,10 +43,11 @@ help:
 	@echo "make policy-negative prove the gate rejects insecure config"
 	@echo "make policy-k8s      prove the workload manifests pass every rule"
 	@echo "make policy-coverage prove every rule fires against a fixture"
-	@echo "make kind-up         create the local cluster"
-	@echo "make k8s-demo        make a real cluster refuse the bad manifests"
-	@echo "make netpol-proof    prove default-deny egress actually blocks traffic"
 	@echo "make clean           remove generated plan artefacts"
+	@echo ""
+	@echo "A real cluster runs in the pipeline, not here: security.yml starts a"
+	@echo "kind cluster, has admission refuse a privileged pod, and runs"
+	@echo "controls/kubernetes/prove-networkpolicy.sh against it."
 
 init:
 	@$(TF) -chdir=$(TF_EKS) init -input=false -no-color >/dev/null
@@ -124,59 +116,12 @@ policy-k8s-negative:
 policy-coverage: $(PLAN_FIXTURE)
 	@$(POLICY_DIR)/coverage.py
 
-########################################
-# Live cluster targets
-#
-# Static policy proves the manifests are correct. These prove a real cluster
-# enforces them, which is a different claim.
-########################################
-
-kind-up:
-	@$(KIND) create cluster --name $(KIND_CLUSTER) 2>/dev/null || echo "cluster $(KIND_CLUSTER) already exists"
-	@$(KUBECTL) cluster-info | head -1
-
-kind-down:
-	@$(KIND) delete cluster --name $(KIND_CLUSTER)
-
-# The namespace, identity, RBAC and network policy are applied for real. The
-# Deployment is server-side dry-run only: it references an image digest that
-# does not exist, so a real apply would leave two pods in ImagePullBackOff.
-# A dry run still executes Pod Security and every Kyverno webhook, which is the
-# control being tested here; scheduling a pod is not.
-k8s-apply:
-	@$(KUBECTL) apply \
-		-f $(K8S_DIR)/base/00-namespace.yaml \
-		-f $(K8S_DIR)/base/10-serviceaccount.yaml \
-		-f $(K8S_DIR)/base/20-rbac.yaml \
-		-f $(K8S_DIR)/base/30-networkpolicy.yaml >/dev/null
-	@$(KUBECTL) apply -f $(K8S_DIR)/policies/ >/dev/null 2>&1 || echo "kyverno not installed; skipping admission policies"
-	@echo "namespace, identity, rbac, network policy and admission policies applied"
-
-# The hardened workload must be admitted. Same webhooks, no pod scheduled.
-k8s-admit:
-	@$(KUBECTL) apply --dry-run=server -f $(K8S_DIR)/base/40-deployment.yaml
-
-# Declared is not enforced. This sends a packet before and after the policy.
-netpol-proof:
-	@CONTEXT=kind-$(KIND_CLUSTER) $(K8S_DIR)/prove-networkpolicy.sh
-
-# The part worth watching. Each apply is expected to be refused, by a different
-# control, for a reason the cluster states itself.
-k8s-demo: k8s-apply
-	@echo ""
-	@echo "=================================================================="
-	@echo " the hardened workload is admitted"
-	@echo "=================================================================="
-	@$(MAKE) --no-print-directory k8s-admit
-	@for manifest in privileged-pod wildcard-rbac public-image default-identity-pod; do \
-		echo ""; \
-		echo "=================================================================="; \
-		echo " kubectl apply -f bad/$$manifest.yaml"; \
-		echo "=================================================================="; \
-		$(KUBECTL) apply -f $(K8S_DIR)/bad/$$manifest.yaml 2>&1 | head -6 || true; \
-	done
-	@echo ""
-	@echo "every insecure manifest was refused by the cluster"
+# Live cluster proof runs in the pipeline, not here. `security.yml` starts a
+# kind cluster, applies the namespace, sends the privileged pod at admission and
+# requires it to be refused, then runs prove-networkpolicy.sh against the same
+# cluster. Static policy proves the manifests are correct; that job proves a
+# real cluster enforces them, which is a different claim and needs no podman on
+# a workstation.
 
 ci: fmt validate policy policy-negative policy-k8s policy-k8s-negative policy-coverage
 	@echo ""

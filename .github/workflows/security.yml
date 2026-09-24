@@ -127,6 +127,12 @@ jobs:
           cat err.txt
           grep -q "violates PodSecurity" err.txt
 
+      # Declared is not enforced. A NetworkPolicy the API server accepts and the
+      # CNI ignores looks identical to one that works, so this sends a packet
+      # before the policy and one after and requires the second to fail.
+      - name: default-deny egress must actually block traffic
+        run: CONTEXT=kind-ci controls/kubernetes/prove-networkpolicy.sh
+
   # ---------------------------------------------------------------------------
   # Secrets. The assignment requires that no credential reaches the repository;
   # this is the control that enforces it rather than trusting it.

@@ -449,6 +449,8 @@ security.yml · workload policy gate
   insecure workload manifests: 29 violations found and refused
   admission must refuse the privileged pod
     Error ... violates PodSecurity "restricted:latest"
+  default-deny egress must actually block traffic
+    before the policy: reachable · after: refused
 ```
 
 **Pipeline gates**
