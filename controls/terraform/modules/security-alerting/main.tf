@@ -55,17 +55,6 @@ resource "aws_sns_topic_policy" "security" {
   policy = data.aws_iam_policy_document.topic.json
 }
 
-# Email confirmation is a manual step: AWS sends a confirmation link and
-# delivers nothing until someone clicks it. Terraform reports the subscription
-# as created either way, so a green apply is not proof the alert arrives.
-resource "aws_sns_topic_subscription" "email" {
-  for_each = toset(var.alert_emails)
-
-  topic_arn = aws_sns_topic.security.arn
-  protocol  = "email"
-  endpoint  = each.value
-}
-
 locals {
   namespace = "${var.name_prefix}/${var.environment}"
 
@@ -141,13 +130,15 @@ resource "aws_cloudwatch_metric_alarm" "detection" {
   depends_on = [aws_cloudwatch_log_metric_filter.detection]
 }
 
-# The email subscription is the operational path. It is not a provable one:
-# AWS sends a confirmation link, delivers nothing until someone clicks it, and
-# on this account nothing ever arrived -- twice, including from a plain
-# unencrypted topic created by hand as a control. A same-account SQS
-# subscription needs no confirmation, so this queue is what demonstrates that
-# the topic delivers at all. `receive-message` printing the alarm JSON is
-# better evidence than an inbox.
+# The queue is the delivery path, and deliberately the only one. An email
+# subscription was tried and removed: AWS sends a confirmation link, delivers
+# nothing until someone clicks it, and on this account nothing ever arrived --
+# twice, including from a plain unencrypted topic created by hand as a control.
+# Terraform reports such a subscription as created either way, so a green apply
+# proved nothing. A same-account SQS subscription needs no confirmation, so
+# this queue demonstrates that the topic delivers at all, and `receive-message`
+# printing the alarm JSON is better evidence than an inbox. A real deployment
+# subscribes a paging tool here; that is a subscription, not a redesign.
 resource "aws_sqs_queue" "alerts" {
   name = "${var.name_prefix}-${var.environment}-security-alerts"
 

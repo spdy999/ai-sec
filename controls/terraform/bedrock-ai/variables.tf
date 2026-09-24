@@ -171,9 +171,3 @@ variable "ephemeral_environment" {
   type        = bool
   default     = false
 }
-
-variable "security_alert_emails" {
-  description = "Addresses that receive security alarms: guardrail intervention bursts, repeated token refusals, and AccessDenied against Bedrock. The default is a placeholder; the deploy job overwrites it."
-  type        = list(string)
-  default     = ["platform-security@example.com"]
-}

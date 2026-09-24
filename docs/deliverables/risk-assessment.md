@@ -243,13 +243,12 @@ service that has stopped logging.
 **Residual.** Still no prompt replay for incident response, and no alarm on a
 single identity's query volume. The trail-sourced alarm inherits CloudTrail's
 delivery latency, five to fifteen minutes, so it is an investigation trigger
-rather than a real-time control. Email delivery of an alert depends on a
-subscription a human has confirmed, which Terraform reports as created either
-way.
+rather than a real-time control. Notification reaches a queue, not a person:
+routing it to an on-call tool is a subscription away and is not deployed here.
 
 **Actions.** (1) Add a per-identity query-volume alarm, which is what a slow
-scripted extraction looks like. (2) Subscribe a queue as well as an address, so
-notification is provable without an inbox. (3) Decide, with Legal and the DPO,
+scripted extraction looks like. (2) Subscribe an on-call tool to the alert
+topic, so a notification reaches a person rather than a queue. (3) Decide, with Legal and the DPO,
 whether a short-retention prompt store under restricted access is worth the
 replay it buys.
 

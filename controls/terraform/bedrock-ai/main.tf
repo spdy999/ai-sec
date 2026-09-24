@@ -103,8 +103,6 @@ module "alerting" {
 
   telemetry_log_group_name = module.logging.mediation_log_group_name
   trail_log_group_name     = module.logging.trail_log_group_name
-
-  alert_emails = var.security_alert_emails
 }
 
 # Private connectivity to Bedrock. The endpoint policy repeats the model

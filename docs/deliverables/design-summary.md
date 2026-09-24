@@ -263,9 +263,12 @@ Two details matter more than the alarms themselves. The metric filters emit a
 zero for every non-matching event, so a quiet period with traffic produces a
 datapoint instead of `INSUFFICIENT_DATA`, which on a dashboard reads as healthy.
 And thresholds sit above one: a single guardrail block is the control working as
-designed, and paging on it teaches people to ignore the alert. The email
-subscription is confirmed by a human — Terraform reports it as created either
-way, so a green apply is not evidence an alert arrives.
+designed, and paging on it teaches people to ignore the alert. The topic's
+only subscription is an SQS queue: an email one was tried and removed, because
+Terraform reports an unconfirmed subscription as created either way, so a green
+apply was not evidence an alert arrived. A same-account queue subscription
+confirms itself, and reading the alarm JSON off it proves delivery. In
+production a paging tool subscribes to the same topic.
 
 **SIEM.** None is deployed, and that is a decision rather than an omission: a
 SIEM is a purchase and this is a demonstration in a personal account. The

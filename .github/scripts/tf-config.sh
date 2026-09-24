@@ -89,14 +89,6 @@ if [ "${key}" = "eks-platform" ] && [ -n "${COST_ALERT_EMAIL:-}" ]; then
   echo "cost_alert_emails = [\"${COST_ALERT_EMAIL}\"]" >> "${dir}/ci.auto.tfvars"
 fi
 
-# Security alarms go to the same address unless a separate one is configured.
-# An alarm whose action reaches nobody is not a detection, so this is not
-# optional in the way the cost address is.
-security_alert_email="${SECURITY_ALERT_EMAIL:-${COST_ALERT_EMAIL:-}}"
-if [ "${key}" = "bedrock-ai" ] && [ -n "${security_alert_email}" ]; then
-  echo "security_alert_emails = [\"${security_alert_email}\"]" >> "${dir}/ci.auto.tfvars"
-fi
-
 # Cluster admin is granted to named principals and inherited by nobody: the
 # cluster sets bootstrap_cluster_creator_admin_permissions to false, so the
 # deploy role does not become an administrator by virtue of having run apply.
