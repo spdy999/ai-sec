@@ -15,7 +15,7 @@ Four trust boundaries. A request crosses each one through a single mediated
 chokepoint, and no boundary is crossed by the model's own judgement.
 
 ```mermaid
-flowchart TB
+flowchart LR
     subgraph corporate["🏢 Caller zone — trusted user, untrusted input"]
         user["Employee<br/><i>browser, signed token<br/>carrying subject + groups</i>"]
     end

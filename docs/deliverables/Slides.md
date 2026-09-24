@@ -75,6 +75,10 @@ style: |
   .fail { color: #dc2626; font-weight: 600; }
   .muted { color: #64748b; font-size: 21px; }
   .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+  section.diagram { padding: 28px 40px 20px; text-align: center; }
+  section.diagram h1 { font-size: 32px; padding-bottom: 6px; margin-bottom: 10px; text-align: left; }
+  section.diagram img { display: block; margin: 0 auto; }
+  section.diagram .muted { font-size: 18px; }
 ---
 
 <!-- _class: lead -->
@@ -156,9 +160,11 @@ is why retrieval is filtered before the model sees anything.
 
 ---
 
+<!-- _class: diagram -->
+
 # Architecture
 
-![w:1020](diagram/architecture-overview.png)
+![w:1190](diagram/architecture-overview.png)
 
 <span class="muted">Four trust boundaries. A request crosses each one only through a single mediated chokepoint.</span>
 
