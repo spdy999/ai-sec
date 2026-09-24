@@ -67,3 +67,5 @@ docs/deliverables/*.pptx
 
 # Speaking notes: local only, never part of the submission
 docs/deliverables/presentation-script.md
+
+@IND_*.md
