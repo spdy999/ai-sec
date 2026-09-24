@@ -30,8 +30,10 @@ line and invoke the skill.
 ```bash
 make demo             # the presentation walkthrough: pass, then fail, then verdict
 make ci               # the gate chain the pipeline enforces
-make plan             # render both Terraform layers to plan.json, offline
-make policy           # both secure layers must pass all 81 rules
+make plan             # render the AI layer to plan.json, offline (the platform
+                      # layer no longer plans offline -- it is gated in the deploy job)
+make policy           # the AI layer must pass all 81 rules
+make policy-plan      # run the rules against any plan.json (PLAN=...)
 make policy-negative  # the insecure fixture must FAIL; a clean run is itself a failure
 make policy-k8s       # workload manifests must pass
 make policy-k8s-negative  # the bad manifests must FAIL
@@ -57,20 +59,17 @@ Dropping the `grep` and piping to `cut -d: -f1 | sort | uniq -c` maps the whole
 fixture by area — 21 eks, 7 encryption, 6 supply chain, 6 model governance,
 6 logging, 5 network, 5 iam, 3 cost, 2 residency.
 
-Live cluster targets, which need podman running:
+**The local cluster targets are gone, removed 2026-09-24.** `kind-up`,
+`kind-down`, `k8s-apply`, `k8s-admit`, `k8s-demo` and `netpol-proof` no longer
+exist, and neither does the podman dependency. A real cluster runs in the
+pipeline instead: `security.yml`'s workload gate starts one with
+`helm/kind-action`, requires admission to refuse `bad/privileged-pod.yaml` with
+`violates PodSecurity`, then runs `controls/kubernetes/prove-networkpolicy.sh`
+against it with `CONTEXT=kind-ci`. That script is still in the repo — it is the
+CI step's script, not a local target.
 
-```bash
-make kind-up          # create the local cluster
-make k8s-apply        # base manifests + Kyverno only
-make k8s-admit        # throw the bad manifests at a real API server
-make k8s-demo         # a real cluster refuses each insecure manifest
-make netpol-proof     # send a packet before and after default-deny egress
-make kind-down
-```
-
-Requires `terraform`, `conftest`, and for the live targets `kind` (0.33+),
-`kubectl`, `helm` and podman. None of the targets above touch an AWS account
-— a real `terraform apply` is a separate, manual step (see below).
+Requires `terraform` and `conftest`. No target above touches an AWS account —
+a real `terraform apply` is a separate, manual step (see below).
 
 ## Architecture
 
@@ -499,12 +498,11 @@ and the pod need one.
 Custom code exists only for identity-aware authorization. Measuring the
 guardrail's real block rate through `ApplyGuardrail` was cut — see State.
 
-**kubectl's current-context is a real work EKS cluster.** Every kubectl call
-pins `--context kind-koerber-demo`. Never use current-context: the `bad/`
-manifests are deliberately privileged.
-
-**Podman needs `/opt/podman/bin` on PATH** for `krunkit`, or the machine will
-not start. Never prune the user's podman volumes or stopped containers.
+**kubectl's current-context is a real work EKS cluster.** Never use
+current-context. Every call against the deployed platform pins
+`--kubeconfig ~/.kube/koerber-live.yaml --context koerber-live`; the `bad/`
+manifests are deliberately privileged and are now applied only inside CI, to a
+cluster that job creates and throws away.
 
 ## State
 
