@@ -6,69 +6,24 @@ breaks. See `CLAUDE.md` for the assignment context and locked decisions.
 
 Everything here runs against AWS in `eu-central-1`. The pipeline owns Terraform,
 the policy engine and the image build; the jump host receives what it needs over
-Session Manager. Nothing is applied from a workstation except the one-time IAM
-setup below.
+Session Manager.
 
-## 1. Prerequisites
+## 1. Before any of this
 
-### The AWS account
+Prerequisites, the repository variables, the one-time `pipeline-iam` apply and
+the deploy chain from an empty account are in
+[README section 1](../README.md#1-prerequisites) and
+[section 3](../README.md#3-from-zero-to-a-live-answer). This document does not
+repeat them.
 
-| Requirement | Why |
-|---|---|
-| Bedrock model access in `eu-central-1` | Anthropic Claude through the EU inference profile, Titan for embeddings |
-| `eu-central-1`, `eu-west-1`, `eu-west-3`, `eu-north-1`, `eu-south-1`, `eu-south-2` all enabled | the EU inference profile routes to all six; the last two are opt-in and a request routed to a disabled region fails |
-| Credentials that can create IAM, once | the [one-time setup](#21-one-time-setup) below. With `aws-vault`, pass `--no-session` or IAM refuses with `InvalidClientTokenId` while `sts:GetCallerIdentity` still succeeds |
+Two things about `pipeline-iam` that the README does not carry: it keeps remote
+state like the other roots, and it has gained permissions over time — the deploy
+role needs `cloudwatch:PutMetricAlarm` and the `sns:` and `sqs:` actions for the
+alerting module. A push never picks that root up, because it runs with a
+person's own credentials, so apply it by hand before the first provision of a
+rebuilt environment or the AI layer fails on `AccessDenied`.
 
-### The GitHub repository
-
-Repository variables `TF_STATE_BUCKET`, `TF_STATE_REGION`,
-`TF_STATE_KMS_KEY_ARN`, `AWS_DEPLOY_ROLE_ARN`, `CLUSTER_ADMIN_ARNS`,
-`COST_ALERT_EMAIL`, `SECURITY_ALERT_EMAIL`, and an Actions environment named
-`production`. The environment name is load-bearing — the OIDC trust policy pins
-`environment:production` in the token subject, so a job without it cannot assume
-the role.
-
-### To drive it
-
-`gh` for the workflow dispatches, and the AWS CLI with the Session Manager
-plugin plus `kubectl` to reach the private cluster. `terraform` is needed only
-for the one-time setup.
-
-## 2. Deploying
-
-Roots are separate applies, in order, because `bedrock-ai` takes
-`eks-platform`'s VPC and OIDC values as plain variables rather than a
-remote-state lookup. There is deliberately no `apply`/`destroy` shortcut
-anywhere — deployment is a workflow with a gate chain, not a command.
-
-### 2.1 One-time setup
-
-From a workstation with admin credentials, once per account:
-
-```bash
-cd controls/terraform/pipeline-iam
-cp terraform.tfvars.example terraform.tfvars   # bucket name, GitHub owner/repo, numeric IDs
-terraform init && terraform apply
-terraform output                                # values for the repository variables
-```
-
-See `controls/terraform/pipeline-iam/README.md`. `CLUSTER_ADMIN_ARNS` is a
-comma-separated list of IAM principals granted EKS cluster admin, for example
-`arn:aws:iam::<account>:user/<you>`. The cluster is created with
-`bootstrap_cluster_creator_admin_permissions` off, so nobody inherits admin from
-having run the apply. Leave the variable unset and no human can read the
-cluster: `kubectl` returns `error: You must be logged in to the server
-(Unauthorized)` and the EKS console shows **Unauthorized** in place of the Pods
-and Nodes counts. The principal has to be the one you actually sign in as — an
-entry for a user does not cover a role you assume.
-
-`pipeline-iam` keeps remote state like the other roots, and it has gained
-permissions over time: the deploy role needs `cloudwatch:PutMetricAlarm` and the
-`sns:` and `sqs:` actions for the alerting module. A push does not pick this root
-up, because it runs with a person's credentials — apply it before the first
-provision of a rebuilt environment, or the AI layer fails on `AccessDenied`.
-
-### 2.2 The infrastructure
+## 2. Repairing one layer
 
 ```bash
 gh workflow run infra-provision.yml            # gate chain, then both layers in order
@@ -107,121 +62,39 @@ private repository. The real gate today is the policy chain each run carries and
 the typed confirmation on teardown. The block stays because it starts working
 the day the plan changes, and because the OIDC subject depends on it.
 
-## 3. The application
+## 3. The application, one piece at a time
 
-Three dispatches, in order. Nothing here is typed against the cluster by hand:
-the image needs the registry, the secrets need the secret containers, the
-manifests need the image digest, and the index needs the corpus bucket, and all
-of them come from applied state.
+`app-release.yml` is the whole chain; these are the pieces, for when one of them
+needs rerunning on its own.
 
-**1. Secret material.** Dispatch `app-secrets.yml` with `confirm=rotate`.
+| Dispatch | Does | Watch for |
+|---|---|---|
+| `app-secrets.yml -f confirm=rotate` | signing key + TLS pair, generated on the jump host | rotating both means the pods need the restart step 2 performs |
+| `app-image.yml` | builds and pushes the image, outputs a digest | nothing downstream refers to a tag |
+| `app-deploy.yml` | renders manifests from applied state, gates the rendered output, stages them with `kubectl` in the state bucket, jump host applies | the staging prefix is deleted whether the apply succeeded or not |
+| `app-index.yml -f confirm=index` | rebuilds the vector index from the jump host | `--recreate` drops the index first; a failed run leaves the service answering nothing |
 
-Two values the service needs and no manifest may carry: the key that signs
-caller identity tokens, and the TLS key pair the pod presents on :8443.
-Terraform creates the secret containers in Secrets Manager, CMK-encrypted, and
-deliberately never an `aws_secretsmanager_secret_version` — a version resource
-puts the plaintext into state, and state is the one artefact of this pipeline
-that holds every attribute of every resource.
-
-The generation happens on the jump host, over Session Manager, so the material
-is created inside the VPC and written to Secrets Manager over an endpoint. It
-never exists on a GitHub runner. Rerunning the workflow rotates both; the pods
-pick a rotated value up on restart, which is what the next step does.
-
-**2. Image and manifests.** Dispatch `app-release.yml`, which calls
-`app-image.yml` then `app-deploy.yml` with the digest between them.
-
-The image is built on a GitHub runner because the jump host has no route to the
-internet and cannot pull a base image or an npm package. Nothing downstream uses
-a tag.
-
-The runner cannot reach the API server either — it is private, the nodes have no
-public address, and the VPC has no internet gateway. So the runner does what
-only it can: read applied state, render the manifests against it, and run the
-policy gate over the *rendered* output rather than the committed shape, because
-substituting real identifiers is exactly the step that could introduce a
-violation. It then stages the manifests plus a `kubectl` binary in the state
-bucket, and sends the jump host a Run Command to fetch and apply them. The
-staging prefix is deleted afterwards whether the apply succeeded or not.
-
-`kubectl` crosses that way because the jump host cannot download one: no route
-to dl.k8s.io, and an S3 gateway endpoint is the only egress it has.
-
-**3. Index the corpus.** Dispatch `app-index.yml` with `confirm=index`.
-
-Ingestion runs from the jump host, the only principal the OpenSearch data access
-policy grants writes to. The service itself can only read, which is what stops a
-prompt injection poisoning the corpus. The run passes `--recreate`, which drops
-the index before rebuilding it — hence the typed confirmation.
-
-A push to `main` touching `app/**` or `controls/kubernetes/**` triggers
-`app-release.yml`. A push touching `controls/data/corpus/**` triggers
-`app-index.yml` — and that alone indexes the *previous* corpus, because the
-ingester reads documents from S3 and Terraform uploads them. Run
-`infra-provision.yml` first, then `app-index.yml`.
+Push triggers: `app/**` or `controls/kubernetes/**` starts `app-release.yml`,
+and `controls/data/corpus/**` starts `app-index.yml`. **A corpus-only push
+indexes the previous corpus** — the ingester reads the documents from S3 and
+Terraform uploads them, so run `infra-provision.yml` first, then `app-index.yml`.
 
 ## 4. Reaching the live platform
 
-There is no public endpoint anywhere in this design: the API server is private,
-the nodes are in private subnets, and there is no internet gateway. Everything
-below goes through the jump host over Session Manager, so it needs no inbound
-rule and no SSH key.
+The two Session Manager hops, the three kubectl flags, minting the tokens in the
+pod and the port-forward are in
+[README section 3.6](../README.md#36-reaching-the-front-end--about-5-minutes).
 
-Prerequisite: the Session Manager plugin for the AWS CLI, and credentials that
-can call `ssm:StartSession` on the instance.
+Three things worth having here rather than there:
 
-```bash
-# the cluster endpoint, and the jump host
-aws eks describe-cluster --name genai-assistant-prod --region eu-central-1 \
-  --query 'cluster.{version:version,status:status,endpoint:endpoint}'
-
-aws ec2 describe-instances \
-  --filters Name=tag:Name,Values=genai-assistant-prod-bastion \
-            Name=instance-state-name,Values=running \
-  --query 'Reservations[].Instances[].InstanceId' --output text
-
-# a rebuild issues a new endpoint and CA — regenerate this every time
-aws eks update-kubeconfig --name genai-assistant-prod --region eu-central-1 \
-  --kubeconfig ~/.kube/koerber-live.yaml --alias koerber-live
-```
-
-A shell on the jump host is `aws ssm start-session --target <instance-id>`. To
-drive the cluster instead, forward the private API server through it:
-
-```bash
-aws ssm start-session --target <instance-id> \
-  --document-name AWS-StartPortForwardingSessionToRemoteHost \
-  --parameters host="<api server hostname>",portNumber=443,localPortNumber=6443
-```
-
-`<api server hostname>` is the endpoint above with `https://` stripped. kubectl
-then needs three flags, because the certificate is issued for that hostname and
-not for localhost:
-
-```bash
-kubectl --kubeconfig ~/.kube/koerber-live.yaml --context koerber-live \
-  --server https://127.0.0.1:6443 --tls-server-name <api server hostname> \
-  -n genai-platform get pods
-```
-
-Then mint the identities **in the pod** and forward the service:
-
-```bash
-kubectl ... exec deploy/genai-mediation -- python -m mediation.tokens alice --groups all-staff
-kubectl ... exec deploy/genai-mediation -- python -m mediation.tokens dana  --groups finance-team
-kubectl ... port-forward deploy/genai-mediation 8443:8443
-```
-
-Front end at `https://127.0.0.1:8443/`, self-signed. Tokens are minted in the pod
-because the signing key's resource policy denies every principal but the workload
-and ingestion roles — a workstation with administrator credentials cannot read
-it.
-
-A deploy replaces the pods and silently kills the port-forward. Restart it rather
-than debugging an empty response.
-
-Never point `kubectl` at a context you have not named explicitly. The
-current-context on a work machine is usually a real work cluster.
+- A plain shell on the jump host is `aws ssm start-session --target <instance-id>`,
+  with no document name — useful when a deploy failed and the evidence is in its
+  Run Command output.
+- A deploy replaces the pods and silently kills the port-forward. Restart it
+  rather than debugging an empty response.
+- Never point `kubectl` at a context you have not named explicitly. The
+  current-context on a work machine is usually a real work cluster, and the
+  `bad/` manifests are deliberately privileged.
 
 ## 5. Demo walkthrough
 
@@ -296,7 +169,7 @@ ECR repository, trail.
 Survives, and rebuild depends on it:
 
 - `pipeline-iam` — the OIDC provider and the deploy role. Separate root, never
-  dispatched. Destroy it and the [one-time setup](#21-one-time-setup) has to be redone from a
+  dispatched. Destroy it and the [one-time setup](../README.md#31-one-time-setup) has to be redone from a
   workstation with admin credentials.
 - The Terraform **state bucket**. The destroy writes empty state into it.
 - Actions variables `TF_STATE_BUCKET`, `AWS_DEPLOY_ROLE_ARN`,
