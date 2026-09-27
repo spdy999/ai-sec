@@ -875,6 +875,41 @@ bill. Not chosen. The zero-cost seam is an
 `aws_cloudwatch_log_subscription_filter` on both log groups with `count` on an
 empty-by-default `siem_destination_arn`. Not built.
 
+## Wiped to zero on 2026-09-27
+
+The assignment is finished and the user asked for the account emptied — *"i will
+not use anything anymore, it's just an exam. remove everything clean. dont cost
+me any penny."* All of the following is gone from `891377211626`, verified by a
+sweep of all 19 enabled regions: the three S3 buckets including the Terraform
+state bucket (1,769 object versions), `genai-assistant-gh-pipeline-role`, the
+GitHub OIDC provider, and two unrelated leftovers the sweep found — a
+`DemoRoleForEC2` / `MyIAMPermissions` pair, and an `ap-southeast-2` demo VPC
+with its `demo-sns` and `demo-sqs`. The IAM user `spdy999`, the zero-spend
+budget and the default cost anomaly monitor were kept: free, and they alarm if
+anything ever bills again. **Nothing is deployable from this repo any more
+without applying `pipeline-iam` by hand first, against a state bucket that no
+longer exists.**
+
+**`infra-destroy` does not empty the account, and the leftover bills.** After
+the last teardown Cost Explorer showed exactly one charged service: KMS. The
+destroy had left **eight customer CMKs in `PendingDeletion`**, two per teardown,
+and AWS bills a key at $1/month for the whole waiting period — ~$9/month for a
+stack that was not running. The state bucket, the pipeline role and the OIDC
+provider also survive a destroy by design, since `pipeline-iam` is a separate
+root.
+
+**The waiting period is 7 to 30 days and cannot be shortened in place.**
+`modules/encryption-key` defaults `deletion_window_in_days = 30` and neither
+root overrides it, so every teardown parks two keys for a month. There is no
+1-day option — `ScheduleKeyDeletion` rejects anything below 7 with a
+`ValidationException`, multi-Region replicas included. To accelerate keys
+already pending you must `cancel-key-deletion` (the key returns to `Disabled`)
+and then `schedule-key-deletion --pending-window-in-days 7`. Done for all nine
+on 2026-09-27: deletion moved from 23-24 October to **2026-10-04**, about $2
+total instead of $9. Setting `deletion_window_in_days = 7` on both `module
+"encryption_key"` calls would make the next teardown cheap; it was left
+unchanged because the work is over.
+
 ## Rebuilt and live as of 2026-09-23, fourth time
 
 Brought back on the user's instruction with the full chain — `infra provision`
@@ -882,8 +917,8 @@ Brought back on the user's instruction with the full chain — `infra provision`
 all green, cluster ACTIVE on 1.36, two pods 1/1 Ready, 14 passages indexed.
 Jump host is `i-0669cead24cffe1e7`; the API server hostname changed again with
 the rebuild, so regenerate `~/.kube/koerber-live.yaml` before any kubectl call.
-**Nothing was torn down at the end of this session — the stack is up and
-billing.**
+**Superseded — the account was wiped on 2026-09-27; see the section
+above.**
 
 **The alarm drift is resolved.** The rejected per-subject work had been applied
 live before it was reverted in git, leaving four alarms and two SNS topics in
