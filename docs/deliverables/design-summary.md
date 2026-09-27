@@ -322,7 +322,7 @@ investigation rather than a response. The design is single-region, and failover
 across regions is not addressed.
 
 **What comes next, with the time each actually takes.** About a week: make the
-detections name the attacker — an EventBridge rule on the telemetry event, which
+detections identify the attacker — an EventBridge rule on the telemetry event, which
 carries the subject, so the notification identifies the identity and can revoke
 that one token rather than paging a human to go and look. About three days: scan
 the corpus at ingestion for embedded instructions and refuse a document with no

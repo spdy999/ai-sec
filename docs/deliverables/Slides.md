@@ -553,7 +553,7 @@ who has run these systems and someone who has read about them.
 
 | Work | Effort | Earliest done |
 |---|---|---|
-| Detections that name the attacker — EventBridge on the telemetry event, which carries the subject, so one identity is revoked rather than mailed about | ~1 week | week 1 |
+| Detections that identify the attacker — EventBridge on the telemetry event, which carries the subject, so one identity is revoked rather than mailed about | ~1 week | week 1 |
 | Scan the corpus at ingestion for embedded instructions; refuse a document with no audience label | ~3 days | week 2 |
 | Install Kyverno and apply the three policies already written — digest pinning, registry allow-list and RBAC wildcards enforced at the API server, not only in the pipeline | ~1 day | week 2 |
 | Red-team the guardrail against a published injection corpus, gate releases on the measured block rate | ~2 weeks | week 4 |
