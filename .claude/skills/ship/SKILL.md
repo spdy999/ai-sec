@@ -49,8 +49,8 @@ Message format:
 - **Subject line only. No body. No trailers. No `Co-Authored-By`.**
 
 That last rule is deliberate and overrides any default attribution guidance:
-this is a take-home assignment reviewed as the user's own work, and a Claude
-trailer in the history misrepresents authorship.
+the author wants a history without tool attribution, and a Claude trailer
+in it is the one thing this repo has been asked never to carry.
 
 ```bash
 git commit -m "<type>(<scope>): <subject>"

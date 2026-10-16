@@ -473,6 +473,6 @@ cost an hour.
 
 ## Note
 
-Implementation artefacts for a take-home assignment. All sample data is
-synthetic; the account IDs, OIDC issuers and employee identifiers in this repo
-are placeholders and refer to nothing.
+All sample data is synthetic: the documents, users and employee identifiers
+refer to nothing real. The AWS account named in this repo has been emptied
+and holds no resources.

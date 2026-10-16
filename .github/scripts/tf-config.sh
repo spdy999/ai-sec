@@ -10,7 +10,7 @@
 #   Reason: Initial configuration of the requested backend "s3"
 #
 # That would break `make plan`, `make ci` and the whole offline story, which is
-# the property the assignment is built on. State lives in S3 for deployments
+# the property the design is built on. State lives in S3 for deployments
 # and nowhere for gates.
 #
 # Usage: tf-config.sh <root directory> <state key prefix>

@@ -1,7 +1,7 @@
 # Security design summary — internal RAG assistant
 
 Secure enterprise GenAI platform on AWS Bedrock and Amazon EKS.
-Candidate submission, 2026-09-23. All data synthetic; no company information used.
+2026-09-23. All sample data is synthetic.
 
 ---
 
@@ -305,7 +305,7 @@ baseline.
 | Guardrail in Terraform | Reimplemented in application code | The control survives a compromised application |
 | Two enforcement points for the model allow-list | One IAM policy | A pod with wider IAM still cannot reach an unapproved model through the endpoint |
 | CloudTrail without prompt text | Full prompt logging | A second copy of confidential content is a new disclosure surface |
-| Small validated scope | Broad partial coverage | The assignment asked for demonstrable, not exhaustive |
+| Small validated scope | Broad partial coverage | Demonstrable beats exhaustive |
 
 **Limitations, stated rather than discovered under questioning.** Prompt
 injection is mitigated, not solved: the guardrail scans the question and not the

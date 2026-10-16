@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Render a deliverable markdown file to PDF and report the page count.
 #
-# The brief caps the design summary at five pages, and a word count is not a
+# The design summary is held to five pages, and a word count is not a
 # page count — this is the check. Typography is fixed here so a re-render is
 # comparable: A4, 18mm margins, 10.5pt serif.
 #

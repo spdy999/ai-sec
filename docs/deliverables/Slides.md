@@ -4,7 +4,6 @@ theme: default
 paginate: true
 size: 16:9
 header: 'Secure Enterprise GenAI Platform'
-footer: 'Confidential — recruitment process'
 style: |
   section {
     font-family: 'Helvetica Neue', 'Segoe UI', system-ui, sans-serif;
@@ -87,20 +86,18 @@ style: |
 
 # Secure Enterprise GenAI Platform
 
-## AI Security Engineer — Take-Home Assignment
+## Reference design and implementation
 
 **Design + four implemented controls**
 AWS Bedrock · Amazon EKS · Policy-as-code
 
 <br>
 
-**Submitted with this deck:** architecture diagram · security design summary
+**Companion documents:** architecture diagram · security design summary
 (5 pages) · risk assessment, top 5 (4 pages)
 
-*Candidate submission — confidential*
-
 <!--
-Timing target: 15 minutes presentation, 15 minutes discussion.
+Timing target: about 15 minutes.
 Four controls, shown in three live demos: the policy gate, the guardrail and
 mediation layer, the cluster and network controls, and detection. The gate runs
 offline; the rest is the deployed account.
@@ -144,7 +141,7 @@ entitled to it *before* it is composed.
 </div>
 
 <!--
-Frame the problem before the solution. The reviewer needs to agree with the
+Frame the problem before the solution. The audience needs to agree with the
 threat model before they will care about the controls.
 -->
 
@@ -545,7 +542,7 @@ who has run these systems and someone who has read about them.
 | Guardrail in Terraform | Reimplemented in application code | The control survives a compromised application |
 | Two enforcement points for the model allow-list | Single IAM policy | Compromised pod with broader IAM still cannot reach an unapproved model |
 | CloudTrail without prompt text | Full prompt logging | A second copy of confidential content is a new disclosure surface |
-| Small validated implementation | Broad partial coverage | The assignment asked for demonstrable, not exhaustive |
+| Small validated implementation | Broad partial coverage | Demonstrable beats exhaustive |
 
 ---
 

@@ -134,7 +134,7 @@ jobs:
         run: CONTEXT=kind-ci controls/kubernetes/prove-networkpolicy.sh
 
   # ---------------------------------------------------------------------------
-  # Secrets. The assignment requires that no credential reaches the repository;
+  # Secrets. The design requires that no credential reaches the repository;
   # this is the control that enforces it rather than trusting it.
   # ---------------------------------------------------------------------------
   secrets:
