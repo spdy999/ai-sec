@@ -1,0 +1,66 @@
+# Both layers torn down, in reverse dependency order.
+#
+# bedrock-ai first: its IRSA role trusts the cluster's OIDC provider, so
+# removing the cluster underneath it would leave a role trusting an issuer that
+# no longer exists.
+#
+# Unlike a provision, a destroy has no gate chain that can fail first. The
+# typed confirmation is the only thing between a misclick and a deleted
+# cluster.
+
+name: infra destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "destroy" to confirm. Anything else aborts.'
+        required: true
+        default: ""
+
+concurrency:
+  group: genai-platform-live
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # Cheap, credential-free, and it fails before anything can assume a role.
+  confirm:
+    name: confirm intent
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: check the typed confirmation
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.confirm }}" != "destroy" ]; then
+            echo "confirmation was '${{ inputs.confirm }}', expected 'destroy'; aborting"
+            exit 1
+          fi
+          echo "confirmed"
+
+  bedrock-ai:
+    needs: [confirm]
+    uses: ./.github/workflows/tf-reusable-workflow.yaml
+    with:
+      layer: bedrock-ai
+      action: destroy
+      run_gate: false
+    permissions:
+      contents: read
+      id-token: write
+    secrets: inherit
+
+  eks-platform:
+    needs: [bedrock-ai]
+    uses: ./.github/workflows/tf-reusable-workflow.yaml
+    with:
+      layer: eks-platform
+      action: destroy
+      run_gate: false
+    permissions:
+      contents: read
+      id-token: write
+    secrets: inherit

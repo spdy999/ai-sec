@@ -1,0 +1,45 @@
+# The platform layer on its own: VPC, cluster, nodes, endpoints.
+#
+# Use this to re-run one layer. A first deployment of an empty account should
+# go through infra-provision.yml instead, which orders the two layers.
+
+name: infra eks-platform
+
+# Dispatch only. A push to main applies through infra-provision.yml, which runs
+# both layers in dependency order; two workflows reacting to the same push start
+# at once and the lock queues them in whichever order GitHub chose, which is not
+# the order the layers depend on.
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: plan, apply or destroy
+        required: true
+        type: choice
+        options: [plan, apply, destroy]
+        default: apply
+
+# An apply or a destroy contends for the live account, and shares the lock with
+# infra-provision.yml so a hand-run layer cannot overlap a push-driven one. A
+# plan changes nothing and gets its own lane.
+concurrency:
+  group: ${{ inputs.action == 'plan' && format('genai-plan-{0}', github.workflow) || 'genai-platform-live' }}
+  cancel-in-progress: ${{ inputs.action == 'plan' }}
+
+permissions:
+  contents: read
+
+jobs:
+  layer:
+    uses: ./.github/workflows/tf-reusable-workflow.yaml
+    with:
+      layer: eks-platform
+      action: ${{ inputs.action || 'apply' }}
+      # Always, now that a push applies. security.yml runs the same chain on the
+      # same commit, but it runs in parallel with this one and so gates nothing:
+      # a failing gate there would not stop an apply here. Duplicated work, and
+      # the duplicate is the one with the power to refuse.
+    permissions:
+      contents: read
+      id-token: write
+    secrets: inherit

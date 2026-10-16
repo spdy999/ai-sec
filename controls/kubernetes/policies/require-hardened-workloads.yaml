@@ -1,0 +1,76 @@
+# NOT DEPLOYED. The Kyverno controller is not installed on the cluster and
+# render.sh copies base/ only, so nothing here is applied. The properties
+# below are enforced in the pipeline gate; this file is the second half of
+# that pair, written and waiting for the controller.
+#
+# Kyverno: the organisational layer above Pod Security admission.
+#
+# Pod Security "restricted" already blocks privilege. These rules cover what it
+# does not: where images may come from, whether they are pinned, and whether a
+# workload declares what it is allowed to consume.
+#
+# validationFailureAction: Enforce means reject, not warn. A policy in Audit
+# mode is a report nobody reads.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-hardened-workloads
+  annotations:
+    policies.kyverno.io/title: Hardened workload requirements
+    policies.kyverno.io/category: Supply chain, Resource governance
+    policies.kyverno.io/severity: high
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    # A tag can be repointed at different bytes after review; a digest cannot.
+    # This is the control that makes image scanning mean something.
+    - name: images-must-be-digest-pinned
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [genai-platform]
+      validate:
+        message: >-
+          Images must be pinned by digest (@sha256:...). A mutable tag can be
+          repointed at different bytes after the scan that approved it.
+        foreach:
+          - list: request.object.spec.containers
+            pattern:
+              image: "*@sha256:*"
+
+    # Only the organisation's own registry. A public image is code from a
+    # stranger running inside the trust boundary.
+    - name: images-from-approved-registry-only
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [genai-platform]
+      validate:
+        message: >-
+          Images must come from the organisation ECR registry. Public registries
+          are not an approved source for workloads handling confidential data.
+        foreach:
+          - list: request.object.spec.containers
+            pattern:
+              image: "*.dkr.ecr.*.amazonaws.com/*"
+
+    # Without limits, one pod can starve every other workload on the node.
+    # Availability is a security property.
+    - name: resource-limits-required
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [genai-platform]
+      validate:
+        message: "Every container must declare CPU and memory limits."
+        foreach:
+          - list: request.object.spec.containers
+            pattern:
+              resources:
+                limits:
+                  cpu: "?*"
+                  memory: "?*"

@@ -1,0 +1,45 @@
+# The AI layer on its own: Bedrock, guardrail, corpus, vectors, identity.
+#
+# Needs the platform layer already applied - it reads its outputs. A first
+# deployment should go through infra-provision.yml, which orders the two.
+
+name: infra bedrock-ai
+
+# Dispatch only. A push to main applies through infra-provision.yml, which runs
+# the platform layer first -- this one reads its outputs, and applying it against
+# a platform layer that has not published them yet is how a variable reads empty
+# and a `count` silently resolves to zero.
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: plan, apply or destroy
+        required: true
+        type: choice
+        options: [plan, apply, destroy]
+        default: apply
+
+# An apply or a destroy contends for the live account, and shares the lock with
+# infra-provision.yml so a hand-run layer cannot overlap a push-driven one. A
+# plan changes nothing and gets its own lane.
+concurrency:
+  group: ${{ inputs.action == 'plan' && format('genai-plan-{0}', github.workflow) || 'genai-platform-live' }}
+  cancel-in-progress: ${{ inputs.action == 'plan' }}
+
+permissions:
+  contents: read
+
+jobs:
+  layer:
+    uses: ./.github/workflows/tf-reusable-workflow.yaml
+    with:
+      layer: bedrock-ai
+      action: ${{ inputs.action || 'apply' }}
+      # Always, now that a push applies. security.yml runs the same chain on the
+      # same commit, but it runs in parallel with this one and so gates nothing:
+      # a failing gate there would not stop an apply here. Duplicated work, and
+      # the duplicate is the one with the power to refuse.
+    permissions:
+      contents: read
+      id-token: write
+    secrets: inherit

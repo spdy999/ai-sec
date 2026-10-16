@@ -1,0 +1,31 @@
+# REJECTED BY: Pod Security admission, profile "restricted"
+#
+# Everything here is the shape of a container escape: privileged gives the
+# process kernel capabilities, hostNetwork and hostPID remove the namespace
+# boundaries, and hostPath mounts the node's filesystem into the pod.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: privileged-pod
+  namespace: genai-platform
+spec:
+  hostNetwork: true
+  hostPID: true
+  containers:
+    - name: escape
+      image: docker.io/library/busybox:latest
+      command: ["sleep", "3600"]
+      securityContext:
+        privileged: true
+        runAsUser: 0
+        allowPrivilegeEscalation: true
+        readOnlyRootFilesystem: false
+        capabilities:
+          add: ["SYS_ADMIN", "NET_ADMIN"]
+      volumeMounts:
+        - name: host-root
+          mountPath: /host
+  volumes:
+    - name: host-root
+      hostPath:
+        path: /

@@ -1,0 +1,26 @@
+# REJECTED BY: Kyverno require-hardened-workloads
+#
+# A mutable tag from a public registry, with no resource limits. The image is
+# code from a stranger, the tag can be repointed after whatever scan approved
+# it, and the absent limits let one pod starve the node.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: public-image-pod
+  namespace: genai-platform
+spec:
+  serviceAccountName: genai-mediation
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: app
+      image: nginx:latest
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]

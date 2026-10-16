@@ -1,0 +1,164 @@
+# The mediation layer itself.
+#
+# Every field below the container image is a control, not a default. Read it as
+# a list of things an attacker who reaches code execution inside this pod cannot
+# then do.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: genai-mediation
+  namespace: genai-platform
+  labels:
+    app.kubernetes.io/name: genai-mediation
+    app.kubernetes.io/part-of: genai-assistant
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: genai-mediation
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: genai-mediation
+        app.kubernetes.io/part-of: genai-assistant
+    spec:
+      serviceAccountName: genai-mediation
+
+      # No API token mounted by default. The only token this pod carries is the
+      # one the pod identity webhook injects, scoped to STS.
+      automountServiceAccountToken: false
+
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+        - name: mediation
+          # Digest-pinned, from the private registry. A tag can be moved to
+          # point at different bytes; a digest cannot.
+          image: 000000000000.dkr.ecr.eu-central-1.amazonaws.com/genai-mediation@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - name: https
+              containerPort: 8443
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
+
+          # Limits are a security control as well as a capacity one: without
+          # them a single pod can starve every other workload on the node.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+          env:
+            - name: AWS_REGION
+              value: eu-central-1
+            - name: BEDROCK_GUARDRAIL_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: genai-mediation-config
+                  key: guardrail_id
+            # Pinned version, never DRAFT: a console edit must not be able to
+            # change production behaviour without a deployment.
+            - name: BEDROCK_GUARDRAIL_VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: genai-mediation-config
+                  key: guardrail_version
+            - name: BEDROCK_CHAT_MODEL_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: genai-mediation-config
+                  key: chat_model_id
+            - name: BEDROCK_EMBEDDING_MODEL_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: genai-mediation-config
+                  key: embedding_model_id
+            - name: VECTOR_COLLECTION_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: genai-mediation-config
+                  key: vector_collection_endpoint
+            - name: VECTOR_INDEX
+              valueFrom:
+                configMapKeyRef:
+                  name: genai-mediation-config
+                  key: vector_index
+            - name: TELEMETRY_LOG_GROUP
+              valueFrom:
+                configMapKeyRef:
+                  name: genai-mediation-config
+                  key: telemetry_log_group
+            - name: IDENTITY_TOKEN_ISSUER
+              valueFrom:
+                configMapKeyRef:
+                  name: genai-mediation-config
+                  key: identity_token_issuer
+            # The signing key and the listener's key pair, both read from
+            # Secrets Manager at startup with the pod's own IRSA credentials.
+            # Only the ARNs are here. There is no Kubernetes Secret in this
+            # namespace, so nothing to read out of etcd and nothing for
+            # `kubectl get secret -o yaml` to print.
+            - name: IDENTITY_SECRET_ARN
+              valueFrom:
+                configMapKeyRef:
+                  name: genai-mediation-config
+                  key: identity_secret_arn
+            - name: TLS_SECRET_ARN
+              valueFrom:
+                configMapKeyRef:
+                  name: genai-mediation-config
+                  key: tls_secret_arn
+
+          # No aws-token mount here. The EKS pod identity webhook injects its
+          # own at /var/run/secrets/eks.amazonaws.com/serviceaccount, and a
+          # second one at that path is rejected as a duplicate mountPath. The
+          # token's audience and one hour lifetime are asked for on the
+          # ServiceAccount instead.
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: https
+              scheme: HTTPS
+            initialDelaySeconds: 10
+            periodSeconds: 20
+
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: https
+              scheme: HTTPS
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+      volumes:
+        # readOnlyRootFilesystem is true, so scratch space is an explicit,
+        # memory-backed, size-capped volume rather than a writable container.
+        # The listener's certificate is written here at startup, which is why
+        # it never reaches a disk and does not survive the pod.
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+

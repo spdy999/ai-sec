@@ -1,0 +1,23 @@
+# The only way to the pods, and it is cluster-internal.
+#
+# Not a LoadBalancer and not a NodePort: this platform has no public ingress by
+# design. An operator reaches it by port-forwarding through the jump host, which
+# means every session is an IAM call in CloudTrail against a named principal
+# rather than an anonymous connection to an address on the internet.
+apiVersion: v1
+kind: Service
+metadata:
+  name: genai-mediation
+  namespace: genai-platform
+  labels:
+    app.kubernetes.io/name: genai-mediation
+    app.kubernetes.io/part-of: genai-assistant
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: genai-mediation
+  ports:
+    - name: https
+      port: 443
+      targetPort: https
+      protocol: TCP

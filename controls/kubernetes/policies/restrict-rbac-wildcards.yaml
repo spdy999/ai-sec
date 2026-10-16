@@ -1,0 +1,63 @@
+# NOT DEPLOYED. The Kyverno controller is not installed on the cluster and
+# render.sh copies base/ only, so nothing here is applied. The properties
+# below are enforced in the pipeline gate; this file is the second half of
+# that pair, written and waiting for the controller.
+#
+# Kyverno: no wildcards in RBAC.
+#
+# This rule exists because of a gap found by testing rather than by reading.
+# Kubernetes has no built-in admission control against granting a workload
+# cluster-admin: apply a ClusterRole with `*` on `*` and the API server accepts
+# it without comment. Pod Security says nothing about RBAC.
+#
+# So the policy gate caught it in the pipeline and the cluster did not catch it
+# at all — one control, not two. This closes that.
+#
+# Wildcards are excluded only for the Kubernetes system roles, which own the
+# `system:` prefix and legitimately need broad access.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-rbac-wildcards
+  annotations:
+    policies.kyverno.io/title: No wildcards in RBAC
+    policies.kyverno.io/category: Identity
+    policies.kyverno.io/severity: critical
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: no-wildcard-verbs-resources-or-groups
+      match:
+        any:
+          - resources:
+              kinds:
+                - ClusterRole
+                - Role
+      preconditions:
+        all:
+          - key: "{{ request.object.metadata.name }}"
+            operator: NotEquals
+            value: "system:*"
+          - key: "{{ request.operation || 'BACKGROUND' }}"
+            operator: AnyIn
+            value: [CREATE, UPDATE]
+      validate:
+        message: >-
+          RBAC rules must name each apiGroup, resource and verb. A wildcard here
+          grants a workload the ability to read every Secret in the cluster,
+          which turns a contained compromise into a total one.
+        foreach:
+          - list: "request.object.rules"
+            deny:
+              conditions:
+                any:
+                  - key: "*"
+                    operator: AnyIn
+                    value: "{{ element.verbs || `[]` }}"
+                  - key: "*"
+                    operator: AnyIn
+                    value: "{{ element.resources || `[]` }}"
+                  - key: "*"
+                    operator: AnyIn
+                    value: "{{ element.apiGroups || `[]` }}"

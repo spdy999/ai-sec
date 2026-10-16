@@ -1,0 +1,20 @@
+# Copy to terraform.tfvars and fill in before the one-time apply.
+#
+# This root runs from a laptop with admin credentials, once. Everything after
+# it runs from the pipeline with the role this root creates.
+
+state_bucket_name = "genai-assistant-tfstate-CHANGE-ME"
+
+github_owner      = "your-github-user"
+github_repository = "ai-sec"
+
+# One OIDC provider per AWS account, not one per repository. If the account
+# already has one, set these two instead of creating a second.
+# create_oidc_provider       = false
+# existing_oidc_provider_arn = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
+
+# gh api users/<owner> --jq .id
+github_owner_id = "000000000"
+
+# gh api repos/<owner>/<repo> --jq .id
+github_repository_id = "0000000000"

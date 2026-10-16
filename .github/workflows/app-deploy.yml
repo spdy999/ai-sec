@@ -1,0 +1,200 @@
+# Apply the workload manifests to the private cluster.
+#
+# The runner cannot reach the API server: it is private, the nodes have no
+# public address, and the VPC has no internet gateway. So the runner does what
+# only it can do -- read applied state, render the manifests against it, run the
+# policy gate over the result -- and the jump host does what only it can do,
+# which is talk to the cluster. The manifests cross between them through the
+# state bucket, over an S3 gateway endpoint, and the `kubectl` binary crosses
+# the same way because the jump host cannot download one.
+#
+# Order: `infra provision`, then `app image`, then `app secrets`, then this.
+
+name: app deploy
+
+# Called by app-release.yml with the digest the build just produced, and
+# dispatchable on its own to redeploy a digest that already exists.
+on:
+  workflow_call:
+    inputs:
+      image_digest:
+        description: "sha256:... published by the app image workflow"
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      image_digest:
+        description: "sha256:... published by the app image workflow"
+        required: true
+        type: string
+
+concurrency:
+  group: genai-app-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: eu-central-1
+  TF_VERSION: "1.14.8"
+  KUBECTL_VERSION: v1.36.4
+  TF_EKS: controls/terraform/eks-platform
+  TF_AI: controls/terraform/bedrock-ai
+
+jobs:
+  deploy:
+    name: render, gate and apply
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    environment:
+      name: production
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: refuse a tag pretending to be a digest
+        run: |
+          case "${{ inputs.image_digest }}" in
+            sha256:*) ;;
+            *) echo "image_digest must be a sha256: digest; a tag can be moved after review" >&2; exit 1 ;;
+          esac
+
+      - uses: actions/checkout@v7
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-deploy-${{ github.run_id }}
+
+      - name: render the manifests against applied state
+        id: render
+        run: |
+          set -euo pipefail
+          ./.github/scripts/tf-config.sh "$TF_EKS" eks-platform
+          ./.github/scripts/tf-config.sh "$TF_AI" bedrock-ai
+          terraform -chdir="$TF_EKS" init -input=false -no-color >/dev/null
+          terraform -chdir="$TF_AI"  init -input=false -no-color >/dev/null
+
+          IMAGE_DIGEST='${{ inputs.image_digest }}' controls/kubernetes/render.sh
+
+          {
+            echo "instance=$(terraform -chdir="$TF_EKS" output -raw bastion_instance_id)"
+            echo "cluster=$(terraform -chdir="$TF_EKS" output -raw eks_cluster_name)"
+          } >> "$GITHUB_OUTPUT"
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          TF_STATE_REGION: ${{ vars.TF_STATE_REGION }}
+
+      # The gate reads what is about to be applied, not the committed shape it
+      # was rendered from. Substituting real identifiers is exactly the step
+      # that could introduce a violation the committed manifests do not carry.
+      - name: gate the rendered manifests
+        run: |
+          set -euo pipefail
+          curl -sSL -o /usr/local/bin/conftest.tar.gz \
+            https://github.com/open-policy-agent/conftest/releases/download/v0.56.0/conftest_0.56.0_Linux_x86_64.tar.gz
+          tar -xzf /usr/local/bin/conftest.tar.gz -C /usr/local/bin conftest
+          conftest test --policy controls/policy --all-namespaces .rendered/
+
+      - name: stage the manifests and kubectl for the jump host
+        id: stage
+        run: |
+          set -euo pipefail
+          prefix="app-deploy/${{ github.run_id }}"
+
+          # The jump host has no route to dl.k8s.io. This runner does, so it
+          # fetches the binary and leaves it where an S3 gateway endpoint can
+          # reach it.
+          curl -sSLo kubectl \
+            "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+
+          aws s3 cp kubectl "s3://${TF_STATE_BUCKET}/${prefix}/kubectl" >/dev/null
+          aws s3 cp --recursive .rendered "s3://${TF_STATE_BUCKET}/${prefix}/manifests" >/dev/null
+
+          echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+        env:
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+
+      - name: apply from the jump host
+        run: |
+          set -euo pipefail
+          cat > /tmp/apply.sh <<EOF
+          set -eu
+
+          # Every AWS call from this host must name a region. Unregioned, the
+          # CLI resolves S3 through the global endpoint, which a VPC with no
+          # internet gateway cannot route -- so the call hangs instead of
+          # failing, and the run sits at "in progress" until something upstream
+          # gives up.
+          export AWS_DEFAULT_REGION=${{ env.AWS_REGION }}
+          export AWS_REGION=${{ env.AWS_REGION }}
+
+          workdir="\$(mktemp -d)"
+          trap 'rm -rf "\$workdir"' EXIT
+          cd "\$workdir"
+
+          aws s3 cp "s3://${{ vars.TF_STATE_BUCKET }}/${{ steps.stage.outputs.prefix }}/kubectl" ./kubectl
+          chmod +x ./kubectl
+          aws s3 cp --recursive "s3://${{ vars.TF_STATE_BUCKET }}/${{ steps.stage.outputs.prefix }}/manifests" ./manifests
+
+          export KUBECONFIG="\$workdir/kubeconfig"
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name '${{ steps.render.outputs.cluster }}' \
+            --kubeconfig "\$KUBECONFIG" >/dev/null
+
+          ./kubectl apply -f ./manifests
+
+          # A rollout that times out says only "timed out waiting for the
+          # condition", which is true of a missing image, a refused secret and a
+          # failing probe alike. The state that distinguishes them lives on the
+          # cluster and is gone from this runner's reach, so it is printed here
+          # -- otherwise every failure costs a hand-driven Run Command to see
+          # what the runner already had a session to ask.
+          if ! ./kubectl -n genai-platform rollout status deployment/genai-mediation --timeout=5m; then
+            echo "--- pods"
+            ./kubectl -n genai-platform get pods -o wide || true
+            echo "--- events"
+            ./kubectl -n genai-platform describe pods -l app.kubernetes.io/name=genai-mediation \
+              | sed -n '/Events:/,\$p' | head -40 || true
+            echo "--- logs"
+            ./kubectl -n genai-platform logs -l app.kubernetes.io/name=genai-mediation \
+              --tail=40 --all-containers --prefix || true
+            exit 1
+          fi
+
+          ./kubectl -n genai-platform get pods
+          EOF
+
+          ./.github/scripts/ssm-run.sh "${{ steps.render.outputs.instance }}" /tmp/apply.sh
+
+      # Guarded on a non-empty prefix: unset, this deletes the state bucket's
+      # entire contents, because `if: always()` runs it even when the staging
+      # step never set the output. See app-index.yml, where that happened.
+      - name: clean up the staging prefix
+        if: always() && steps.stage.outputs.prefix != ''
+        run: |
+          set -euo pipefail
+          aws s3 rm --recursive \
+            "s3://${{ vars.TF_STATE_BUCKET }}/${{ steps.stage.outputs.prefix }}" >/dev/null
+
+      - name: report
+        run: |
+          {
+            echo "### Workload applied"
+            echo
+            echo "- image: \`${{ inputs.image_digest }}\`"
+            echo "- cluster: \`${{ steps.render.outputs.cluster }}\`"
+            echo "- applied from: jump host \`${{ steps.render.outputs.instance }}\`, over Session Manager"
+          } >> "$GITHUB_STEP_SUMMARY"

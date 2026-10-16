@@ -1,0 +1,71 @@
+# macOS
+.DS_Store
+
+# Claude Code. Local settings stay local; the repo-scoped skills are shared,
+# so the directory itself must be unignored - git does not descend into an
+# ignored directory, and a bare !.claude/skills/ would never be reached.
+.claude/*
+!.claude/skills/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tf.plan
+plan.json
+*.auto.tfvars
+!*.tfvars.example
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Never commit credentials
+*.env
+.envrc
+aws-env.sh
+
+.obsidian/
+
+# Generated at deploy time by .github/scripts/tf-config.sh. The backend is not
+# committed because declaring one makes the offline `terraform plan` refuse to
+# run, which would break `make ci`.
+controls/terraform/*/backend.tf
+# pipeline-iam is the exception: it is not part of the offline gate chain, so
+# its backend is a real committed file.
+!controls/terraform/pipeline-iam/backend.tf
+terraform.tfvars
+# pipeline-iam is the exception again, for the same reason. The two deploy roots
+# get their variables from tf-config.sh at deploy time, so a committed
+# terraform.tfvars there would be dead weight at best and drift at worst. This
+# root is run once, by hand, and its inputs are the account and repository it is
+# being wired to -- no secrets, and losing them means a fresh clone cannot
+# reproduce the bootstrap without guessing.
+!controls/terraform/pipeline-iam/terraform.tfvars
+
+# Built React bundle and its toolchain; the image build produces both.
+app/web/node_modules/
+app/web/dist/
+
+# Manifests rendered against applied state; regenerate with controls/kubernetes/render.sh.
+.rendered/
+
+# CloudTrail console exports: real account data, never committed
+event_history.csv
+event_history.json
+
+# Editor state: rope keeps its index inside the package it indexes
+.ropeproject/
+
+# Document renders: the markdown is the source, these are exports
+docs/deliverables/Slides.html
+docs/deliverables/*.pdf
+docs/deliverables/*.pptx
+
+# Speaking notes: local only, never part of the submission
+docs/deliverables/presentation-script.md
+
+@IND_*.md

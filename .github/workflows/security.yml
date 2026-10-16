@@ -1,0 +1,207 @@
+# Security gates for the GenAI platform.
+#
+# The property worth defending: no job that runs on a pull request holds AWS
+# credentials. `terraform plan` renders the graph with mock credentials and the
+# policy engine reads that graph as a file, so the entire gate chain runs on
+# untrusted input with nothing to steal.
+#
+# No job in this workflow authenticates to AWS at all. Deployment lives in
+# infra-provision.yml, which is dispatch-only and federates by OIDC against a role
+# restricted to this repository and environment. There is no long-lived access
+# key in GitHub secrets, because there is no access key at all.
+#
+# Everything here mirrors `make ci`, so what a developer runs locally is exactly
+# what the pipeline enforces. A gate that only exists in CI gets worked around.
+
+name: security gates
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Least privilege at the workflow level. Individual jobs widen this only where
+# they must, and nothing here may write to the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TF_VERSION: "1.14.8"
+  CONFTEST_VERSION: "0.56.0"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Infrastructure: format, validity, then policy in both directions.
+  # ---------------------------------------------------------------------------
+  infrastructure:
+    name: infrastructure policy gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: install conftest
+        run: |
+          set -euo pipefail
+          curl -sSL -o conftest.tar.gz \
+            "https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz"
+          tar xzf conftest.tar.gz conftest
+          sudo mv conftest /usr/local/bin/
+          conftest --version
+
+      - name: formatting
+        run: make fmt
+
+      - name: validity
+        run: make validate
+
+      # The secure modules must pass every rule.
+      - name: policy gate
+        run: make policy
+
+      # And the insecure fixture must fail. A gate that has only ever returned
+      # "pass" has not been tested, so a clean run here fails the build.
+      - name: negative test
+        run: make policy-negative
+
+      # And every rule must be one of the rules that fails. A rule that has
+      # never rejected anything is a comment with a syntax highlighter.
+      - name: rule coverage
+        run: make policy-coverage
+
+  # ---------------------------------------------------------------------------
+  # Workloads: the same policy engine, reading Kubernetes YAML directly.
+  # ---------------------------------------------------------------------------
+  workloads:
+    name: workload policy gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: install conftest
+        run: |
+          set -euo pipefail
+          curl -sSL -o conftest.tar.gz \
+            "https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz"
+          tar xzf conftest.tar.gz conftest
+          sudo mv conftest /usr/local/bin/
+
+      - name: manifests must pass
+        run: make policy-k8s
+
+      - name: insecure manifests must fail
+        run: make policy-k8s-negative
+
+      # A real cluster, enforcing the controls itself. Static policy proves the
+      # manifests are correct; this proves admission refuses the bad ones.
+      - name: create cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: ci
+          wait: 120s
+
+      - name: admission must refuse the privileged pod
+        run: |
+          set -euo pipefail
+          kubectl apply -f controls/kubernetes/base/00-namespace.yaml
+
+          if kubectl apply -f controls/kubernetes/bad/privileged-pod.yaml 2>err.txt; then
+            echo "FAIL: the cluster accepted a privileged pod"
+            exit 1
+          fi
+
+          echo "cluster refused it, as required:"
+          cat err.txt
+          grep -q "violates PodSecurity" err.txt
+
+      # Declared is not enforced. A NetworkPolicy the API server accepts and the
+      # CNI ignores looks identical to one that works, so this sends a packet
+      # before the policy and one after and requires the second to fail.
+      - name: default-deny egress must actually block traffic
+        run: CONTEXT=kind-ci controls/kubernetes/prove-networkpolicy.sh
+
+  # ---------------------------------------------------------------------------
+  # Secrets. The design requires that no credential reaches the repository;
+  # this is the control that enforces it rather than trusting it.
+  # ---------------------------------------------------------------------------
+  secrets:
+    name: secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history: a credential removed in the most recent commit is
+          # still a leaked credential.
+          fetch-depth: 0
+
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ---------------------------------------------------------------------------
+  # A second opinion on the Terraform, from a scanner nobody here wrote.
+  # Our own rules encode our own blind spots.
+  # ---------------------------------------------------------------------------
+  scan:
+    name: third-party scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # Findings go to the job log, not to code scanning: SARIF upload needs
+      # GitHub Advanced Security, which a private repo on a free plan does not
+      # have. The scan is advisory either way.
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: controls/
+          format: table
+          severity: HIGH,CRITICAL
+          exit-code: "0" # reported, not blocking: this is advisory input
+
+  # ---------------------------------------------------------------------------
+  # The gate itself. Branch protection requires this check, so every job above
+  # is mandatory by transitivity and none can be skipped by renaming a file.
+  # ---------------------------------------------------------------------------
+  gate:
+    name: security gate
+    runs-on: ubuntu-latest
+    needs: [infrastructure, workloads, secrets, scan]
+    if: always()
+
+    steps:
+      - name: verify every gate passed
+        run: |
+          set -euo pipefail
+          echo "infrastructure: ${{ needs.infrastructure.result }}"
+          echo "workloads:      ${{ needs.workloads.result }}"
+          echo "secrets:        ${{ needs.secrets.result }}"
+          echo "scan:           ${{ needs.scan.result }}"
+
+          if [ "${{ needs.infrastructure.result }}" != "success" ] \
+            || [ "${{ needs.workloads.result }}" != "success" ] \
+            || [ "${{ needs.secrets.result }}" != "success" ]; then
+            echo "a required gate failed; deployment is blocked"
+            exit 1
+          fi
+
+          echo "all required gates passed"
