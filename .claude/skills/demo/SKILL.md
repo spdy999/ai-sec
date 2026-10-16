@@ -55,7 +55,7 @@ reads like a network problem:
 
 ```bash
 aws eks update-kubeconfig --name genai-assistant-prod --region eu-central-1 \
-  --kubeconfig ~/.kube/koerber-live.yaml --alias koerber-live
+  --kubeconfig ~/.kube/genai-live.yaml --alias genai-live
 ```
 
 If anything is missing, stop and name the rebuild step that fixes it —
@@ -97,7 +97,7 @@ kubectl then needs three flags, because the certificate is issued for that
 hostname and not for localhost:
 
 ```bash
-kubectl --kubeconfig ~/.kube/koerber-live.yaml --context koerber-live \
+kubectl --kubeconfig ~/.kube/genai-live.yaml --context genai-live \
   --server https://127.0.0.1:6443 --tls-server-name <api hostname> \
   -n genai-platform get pods
 ```
@@ -138,7 +138,7 @@ Row four is the masking control, and it is the only row where the document is
 *supposed* to be retrieved. `engineering-oncall.md` is all-staff, so entitlement
 filtering will not withhold it; the contact details come back anonymised because
 the guardrail acts on the response. The name is not masked — only email, phone
-and the `KOE-` pattern are configured — which is the honest version: masking
+and the `EMP-` pattern are configured — which is the honest version: masking
 covers the entities you named and nothing else.
 
 **The badge reads "guardrail intervened" on this row, same as the injection

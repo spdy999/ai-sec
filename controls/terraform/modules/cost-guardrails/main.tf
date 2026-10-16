@@ -7,7 +7,7 @@ resource "aws_budgets_budget" "platform" {
 
   cost_filter {
     name   = "TagKeyValue"
-    values = ["user:Project$koerber-genai-assistant"]
+    values = ["user:Project$genai-assistant"]
   }
 
   # Forecast alerts, so the warning arrives while there is still time to act

@@ -14,7 +14,7 @@
 # kept outside the governed namespace and removed afterwards.
 set -euo pipefail
 
-CONTEXT="${CONTEXT:-kind-koerber-demo}"
+CONTEXT="${CONTEXT:-kind-genai-demo}"
 NS=netpol-proof
 KC="kubectl --context ${CONTEXT} -n ${NS}"
 

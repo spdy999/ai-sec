@@ -1,8 +1,8 @@
 resource "aws_bedrock_guardrail" "this" {
   name                      = "${var.name_prefix}-${var.environment}"
   description               = "Enterprise guardrail: prompt attack, sensitive data, denied topics"
-  blocked_input_messaging   = "This request was blocked by the Korber AI security guardrail."
-  blocked_outputs_messaging = "The response was blocked by the Korber AI security guardrail."
+  blocked_input_messaging   = "This request was blocked by the AI security guardrail."
+  blocked_outputs_messaging = "The response was blocked by the AI security guardrail."
   kms_key_arn               = var.kms_key_arn
 
   content_policy_config {
@@ -39,7 +39,7 @@ resource "aws_bedrock_guardrail" "this" {
 
     regexes_config {
       name        = "employee-id"
-      description = "Synthetic internal employee identifier, format KOE-123456"
+      description = "Synthetic internal employee identifier, format EMP-123456"
       pattern     = var.employee_id_pattern
       action      = "ANONYMIZE"
     }

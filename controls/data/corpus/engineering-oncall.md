@@ -15,9 +15,9 @@ note covering anything still open.
 
 Contacts for the current rotation, all invented:
 
-- Primary: Rafael Ortiz, employee KOE-401872, rafael.ortiz@example.invalid,
+- Primary: Rafael Ortiz, employee EMP-401872, rafael.ortiz@example.invalid,
   +49 40 000000
-- Secondary: Nina Halvorsen, employee KOE-401915, nina.halvorsen@example.invalid,
+- Secondary: Nina Halvorsen, employee EMP-401915, nina.halvorsen@example.invalid,
   +49 40 000001
 
 This document is deliberately readable by all-staff and deliberately full of

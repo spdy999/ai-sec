@@ -11,7 +11,7 @@ metadata:
   namespace: genai-platform
   labels:
     app.kubernetes.io/name: genai-mediation
-    app.kubernetes.io/part-of: koerber-genai-assistant
+    app.kubernetes.io/part-of: genai-assistant
 spec:
   type: ClusterIP
   selector:

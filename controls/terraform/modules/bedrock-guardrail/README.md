@@ -15,7 +15,7 @@ What it enforces:
 | `PROMPT_ATTACK`, input strength HIGH | Instructions smuggled in through a question or a retrieved document |
 | PII entities: EMAIL, PHONE anonymised | Personal data leaving in a generated answer |
 | CREDIT_DEBIT_CARD_NUMBER blocked | Card numbers, which are never a legitimate answer |
-| Regex `KOE-[0-9]{6}` | Internal employee identifiers |
+| Regex `EMP-[0-9]{6}` | Internal employee identifiers |
 | Denied topic: credential disclosure | "What is the HR database password?" |
 
 The version resource pins a snapshot. The mediation layer references that

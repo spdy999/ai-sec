@@ -168,7 +168,7 @@ aws ec2 describe-instances \
 
 # a rebuild issues a new endpoint and CA — regenerate the kubeconfig every time
 aws eks update-kubeconfig --name genai-assistant-prod --region eu-central-1 \
-  --kubeconfig ~/.kube/koerber-live.yaml --alias koerber-live
+  --kubeconfig ~/.kube/genai-live.yaml --alias genai-live
 
 # hop one: the private API server, through the jump host. Leave this running.
 aws ssm start-session --target <instance-id> \
@@ -181,7 +181,7 @@ kubectl needs three flags, because the certificate is issued for that hostname
 and not for localhost:
 
 ```bash
-kubectl --kubeconfig ~/.kube/koerber-live.yaml --context koerber-live \
+kubectl --kubeconfig ~/.kube/genai-live.yaml --context genai-live \
   --server https://127.0.0.1:6443 --tls-server-name <api server hostname> \
   -n genai-platform get pods
 ```
@@ -268,7 +268,7 @@ What each comes back with, captured against the live account:
 | 2 | "I do not find any information about Q3 revenue forecast in the passages provided" | **`finance-q3-forecast.md` is absent from Sources** — `alice` holds `all-staff`, so it was never a retrieval candidate |
 | 3 | EUR 14.2M against a plan of EUR 13.5M, from `finance-q3-forecast.md` | same question, same index, different answer — only the token changed |
 | 4 | `Primary: Rafael Ortiz - Employee ID: {employee-id} - Email: {EMAIL} - Phone: {PHONE}` | masking, not filtering: the document *is* all-staff and *is* retrieved |
-| 5 | "This request was blocked by the Korber AI security guardrail." | the guardrail refused it, not the model |
+| 5 | "This request was blocked by the AI security guardrail." | the guardrail refused it, not the model |
 
 2 and 3 back to back are the point of the design: the difference is in what was
 retrievable, visible in the Sources line, rather than in what the model was told
@@ -421,7 +421,7 @@ Stated because they bound what the implementation can claim.
   declines it because the system prompt names passages as quoted data, which is
   a soft control; the hard one is that retrieval already filtered to the
   caller's groups, so the injection can only reach what they could read anyway.
-- **Masking covers the entities that were named.** EMAIL, PHONE and the `KOE-`
+- **Masking covers the entities that were named.** EMAIL, PHONE and the `EMP-`
   employee-id regex are anonymised; a card number blocks the response outright.
   A personal name comes back in clear.
 - **Detection thresholds were chosen, not baselined.** Three interventions in

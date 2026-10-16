@@ -8,7 +8,7 @@ Implementation artefacts for a take-home assignment: a secure enterprise GenAI
 platform (internal RAG assistant) on AWS Bedrock and EKS. The repo holds code
 and config only — the written deliverables (design summary, slides, diagrams,
 cost analysis) live in the user's Obsidian vault on Google Drive, under
-`.../Interview/Jobs/2026/Koerber/Assignment/`.
+the assignment folder.
 
 **Confidential.** Do not publish any of it — no public repos, no Artifacts, no
 third-party services. All sample data must be synthetic.
@@ -336,7 +336,7 @@ falls back to `IDENTITY_SECRET_ARN` when `IDENTITY_TOKEN_SECRET` is unset, so
 API server's hostname, port 443, local port 6443; then kubectl against
 `--server https://127.0.0.1:6443` with `--tls-server-name <API server hostname>`,
 because the certificate is issued for that name and not for localhost.
-`~/.kube/koerber-live.yaml` holds the context and `spdy999` has an access entry.
+`~/.kube/genai-live.yaml` holds the context and `spdy999` has an access entry.
 Then `kubectl port-forward deploy/genai-mediation 8443:8443`, and the front end
 is at `https://127.0.0.1:8443/`, self-signed. A deploy replaces the pods and
 silently kills the port-forward; restart it rather than debugging the empty
@@ -501,7 +501,7 @@ guardrail's real block rate through `ApplyGuardrail` was cut — see State.
 
 **kubectl's current-context is a real work EKS cluster.** Never use
 current-context. Every call against the deployed platform pins
-`--kubeconfig ~/.kube/koerber-live.yaml --context koerber-live`; the `bad/`
+`--kubeconfig ~/.kube/genai-live.yaml --context genai-live`; the `bad/`
 manifests are deliberately privileged and are now applied only inside CI, to a
 cluster that job creates and throws away.
 
@@ -632,12 +632,12 @@ end the pod serves at `/` on :8443. Four of the five rows behave as designed:
 | leave carry-over | alice | answered from `hr-leave-policy.md` |
 | Q3 revenue | alice | "no information in the passages" — the finance document was never a retrieval candidate |
 | Q3 revenue | dana | EUR 14.2M against a plan of 13.5M, from `finance-q3-forecast.md` |
-| "ignore all previous instructions…" | alice | guardrail intervened; "blocked by the Korber AI security guardrail" |
+| "ignore all previous instructions…" | alice | guardrail intervened; "blocked by the AI security guardrail" |
 | customer records | alice | the model declined; the guardrail did not fire |
 
 **A masking row was added and run live on 2026-09-23.** `engineering-oncall.md`
 is all-staff and now carries two synthetic contacts with email, phone and
-`KOE-######` identifiers, so the document is retrieved and the identifiers come
+`EMP-######` identifiers, so the document is retrieved and the identifiers come
 back anonymised — the one row where masking rather than filtering does the work.
 It exists because the assignment §2.3 lists sensitive-data masking as a
 demonstrable control and nothing on screen showed it. Asked as alice, "Who is on
@@ -916,7 +916,7 @@ Brought back on the user's instruction with the full chain — `infra provision`
 → `app secrets -f confirm=rotate` → `app release` → `app index -f confirm=index`,
 all green, cluster ACTIVE on 1.36, two pods 1/1 Ready, 14 passages indexed.
 Jump host is `i-0669cead24cffe1e7`; the API server hostname changed again with
-the rebuild, so regenerate `~/.kube/koerber-live.yaml` before any kubectl call.
+the rebuild, so regenerate `~/.kube/genai-live.yaml` before any kubectl call.
 **Superseded — the account was wiped on 2026-09-27; see the section
 above.**
 
@@ -981,9 +981,9 @@ five now refuses at the guardrail rather than at the model. `app-secrets`
 requires `confirm=rotate`, which is easy to forget: a bare dispatch fails with
 HTTP 422.
 
-A rebuild issues a new cluster endpoint and CA, so `~/.kube/koerber-live.yaml`
+A rebuild issues a new cluster endpoint and CA, so `~/.kube/genai-live.yaml`
 must be regenerated with `aws eks update-kubeconfig --name genai-assistant-prod
---kubeconfig ~/.kube/koerber-live.yaml --alias koerber-live` before any kubectl
+--kubeconfig ~/.kube/genai-live.yaml --alias genai-live` before any kubectl
 call. The jump host is `genai-assistant-prod-bastion`; the other running
 instance is the node, tagged `mediation`.
 

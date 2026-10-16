@@ -1,4 +1,4 @@
-# Security gate chain for the Korber GenAI platform assignment.
+# Security gate chain for the GenAI platform assignment.
 #
 # Every target runs locally at zero cost. Nothing is deployed and no AWS
 # credentials are required: `terraform plan` renders the infrastructure graph

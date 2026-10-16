@@ -9,4 +9,4 @@ kind: Namespace
 metadata:
   name: genai-unlabelled
   labels:
-    app.kubernetes.io/part-of: koerber-genai-assistant
+    app.kubernetes.io/part-of: genai-assistant

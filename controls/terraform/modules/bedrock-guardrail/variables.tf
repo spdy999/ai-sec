@@ -16,5 +16,5 @@ variable "kms_key_arn" {
 variable "employee_id_pattern" {
   description = "Regex for the internal employee identifier format that must never appear in a response."
   type        = string
-  default     = "KOE-[0-9]{6}"
+  default     = "EMP-[0-9]{6}"
 }

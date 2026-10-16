@@ -136,7 +136,7 @@ before any kubectl call:
 ```bash
 aws-vault exec spdy999 --no-session -- aws eks update-kubeconfig \
   --name genai-assistant-prod --region eu-central-1 \
-  --kubeconfig ~/.kube/koerber-live.yaml --alias koerber-live
+  --kubeconfig ~/.kube/genai-live.yaml --alias genai-live
 ```
 
 ## Step 6 — Report

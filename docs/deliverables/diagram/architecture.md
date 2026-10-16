@@ -124,7 +124,7 @@ sequenceDiagram
         end
 
         alt guardrail intervened on input
-            P-->>U: "blocked by the Korber AI security guardrail"
+            P-->>U: "blocked by the AI security guardrail"
             P->>L: guardrail_intervened
         else answered
             P-->>U: answer + sources

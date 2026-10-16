@@ -15,7 +15,7 @@ metadata:
   namespace: genai-platform
   labels:
     app.kubernetes.io/name: genai-mediation
-    app.kubernetes.io/part-of: koerber-genai-assistant
+    app.kubernetes.io/part-of: genai-assistant
 data:
   guardrail_id: gr000000000000
   # Pinned, never DRAFT: a console edit must not change production behaviour

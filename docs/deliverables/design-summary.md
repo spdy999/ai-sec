@@ -1,7 +1,7 @@
 # Security design summary — internal RAG assistant
 
 Secure enterprise GenAI platform on AWS Bedrock and Amazon EKS.
-Candidate submission, 2026-09-23. All data synthetic; no Körber information used.
+Candidate submission, 2026-09-23. All data synthetic; no company information used.
 
 ---
 
