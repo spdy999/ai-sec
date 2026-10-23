@@ -137,9 +137,12 @@ costs is useful; dispatching `infra-destroy.yml` on your own judgement is not.
 it the credentials are wrapped in a `GetSessionToken` session that IAM refuses
 with `InvalidClientTokenId`, while `sts:GetCallerIdentity` succeeds with the
 same token, so the credentials look fine. The account is `891377211626`, the
-profile `spdy999`. It replaced `171414227044` / `pun100` on 2026-09-22; the old
-account is torn down and empty, and anything still naming it in old commits is
-history rather than configuration. `docs/evidence/aws-live-capture.md` was
+profile `spdy999`. It replaced `171414227044` / `pun100` on 2026-09-22; anything
+still naming the old account in old commits is history rather than
+configuration. That account was **not** empty after its teardown: the
+`pipeline-iam` root, two CMKs, the ECR repository and the CloudTrail bucket
+survived until 2026-10-23, when they were deleted by hand (profile `chula`,
+same account) and both keys scheduled for deletion on 2026-10-30. `docs/evidence/aws-live-capture.md` was
 recaptured against the live stack on 2026-09-24 and now reads 891377211626.
 
 **The S3 backend is generated at deploy time, never committed.** Declaring a
